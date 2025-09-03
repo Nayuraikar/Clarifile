@@ -69,5 +69,14 @@ app.post('/resolve_duplicate', async (req, res) => {
     res.json(r.data);
   } catch (e) { res.status(500).json({error: e.toString()}); }
 });
+app.get('/categories', async (req, res) => {
+  try { const r = await axios.get(`${PARSER}/categories`); res.json(r.data); }
+  catch (e) { res.status(500).json({error: e.toString()}); }
+});
+
+app.get('/file_summary', async (req, res) => {
+  try { const r = await axios.get(`${PARSER}/file_summary`, { params: req.query }); res.json(r.data); }
+  catch (e) { res.status(500).json({error: e.toString()}); }
+});
 
 app.listen(4000, () => console.log('Gateway running on http://127.0.0.1:4000'));

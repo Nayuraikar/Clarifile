@@ -2,6 +2,10 @@
 from fastapi import FastAPI
 import sqlite3, os, numpy as np
 from sentence_transformers import SentenceTransformer
+from pydantic import BaseModel
+from typing import List
+from fastapi import FastAPI
+import numpy as np
 
 DB = "metadata_db/clarifile.db"
 EMB_DIR = "storage/embeddings"
@@ -10,6 +14,10 @@ os.makedirs(EMB_DIR, exist_ok=True)
 app = FastAPI()
 # model will download at first run (CPU)
 model = SentenceTransformer("all-mpnet-base-v2")
+
+class TextsRequest(BaseModel):
+    texts: List[str]
+
 
 def get_db_conn():
     return sqlite3.connect(DB, check_same_thread=False)
@@ -32,3 +40,8 @@ def embed_pending():
         created += 1
     conn.close()
     return {"embedded": created}
+
+@app.post("/embed_texts")
+def embed_texts(req: TextsRequest):
+    vecs = model.encode(req.texts, convert_to_numpy=True, normalize_embeddings=True)
+    return {"vectors": vecs.tolist()}

@@ -8,6 +8,7 @@
     button { margin: 4px; }
     .card { border: 1px solid #ddd; padding: 8px; margin:8px 0; border-radius:6px; }
     .flex { display:flex; gap:8px; align-items:center; }
+    .chunks { margin-top:6px; padding:6px; background:#f9f9f9; border-radius:4px; }
   </style>
 </head>
 <body>
@@ -18,12 +19,17 @@
     <button id="btnReindex">Reindex</button>
     <button id="btnProposals">Show Proposals</button>
     <button id="btnDup">Show Duplicates</button>
+    <button id="btnCategories">Show Categories</button>
   </div>
+
   <h3>Proposals</h3>
   <div id="proposals"></div>
 
   <h3>Duplicates</h3>
   <div id="duplicates"></div>
+
+  <h3>Categories</h3>
+  <div id="cats"></div>
 
 <script>
 const BASE = "http://127.0.0.1:4000";
@@ -58,7 +64,10 @@ document.getElementById('btnProposals').onclick = async ()=>{
     div.innerHTML = `<strong>${f.file_name || '(no name)'}</strong><br>
       Proposed: <em>${f.proposed_label}</em> — Status: ${f.status || ''} <br>
       <button data-id="${f.file_id}" data-label="${f.proposed_label}" class="approve">Approve as ${f.proposed_label}</button>
-      <input placeholder="Custom label" id="lbl${f.file_id}" style="margin-left:8px"/><button data-id="${f.file_id}" class="approveCustom">Approve Custom</button>`;
+      <input placeholder="Custom label" id="lbl${f.file_id}" style="margin-left:8px"/>
+      <button data-id="${f.file_id}" class="approveCustom">Approve Custom</button>
+      <button data-id="${f.file_id}" class="viewSummary">View Summary</button>
+      <div id="summary${f.file_id}" class="chunks" style="display:none"></div>`;
     container.appendChild(div);
   });
   // attach handlers
@@ -75,6 +84,20 @@ document.getElementById('btnProposals').onclick = async ()=>{
       const lbl = document.getElementById('lbl'+id).value || 'Uncategorized';
       const r = await call('/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({file_id: parseInt(id), label: lbl})});
       alert(JSON.stringify(r));
+    };
+  });
+  document.querySelectorAll('.viewSummary').forEach(b=>{
+    b.onclick = async ()=>{
+      const id = b.dataset.id;
+      const r = await fetch(`${BASE}/file_summary?file_id=${id}`);
+      if(r.status===200){
+        const j = await r.json();
+        const div = document.getElementById('summary'+id);
+        div.innerText = j.summary || '(no summary)';
+        div.style.display = 'block';
+      }else{
+        alert("No summary for file "+id);
+      }
     };
   });
 };
@@ -108,6 +131,19 @@ document.getElementById('btnDup').onclick = async ()=>{
       const r = await call('/resolve_duplicate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({file_a,file_b,action})});
       alert(JSON.stringify(r));
     };
+  });
+};
+
+document.getElementById('btnCategories').onclick = async ()=>{
+  const r = await fetch(`${BASE}/categories`);
+  const cats = await r.json();
+  const el = document.getElementById('cats');
+  el.innerHTML = '';
+  cats.forEach(c=>{
+    const d = document.createElement('div');
+    d.className='card';
+    d.innerHTML = `<strong>${c.name}</strong> — ${c.file_count} file(s)`;
+    el.appendChild(d);
   });
 };
 </script>
