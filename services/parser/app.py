@@ -1,0 +1,153 @@
+# services/parser/app.py
+from fastapi import FastAPI, HTTPException
+import os, sqlite3, hashlib, shutil, json
+from typing import List
+
+DB = "metadata_db/clarifile.db"
+SAMPLE_DIR = "storage/sample_files"
+ORGANIZED_DIR = "storage/organized_demo"
+EMB_DIR = "storage/embeddings"
+
+app = FastAPI()
+
+def init_db():
+    os.makedirs(os.path.dirname(DB), exist_ok=True)
+    conn = sqlite3.connect(DB, check_same_thread=False)
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT UNIQUE,
+        file_name TEXT,
+        file_hash TEXT,
+        size INTEGER,
+        status TEXT,
+        proposed_label TEXT,
+        final_label TEXT,
+        inserted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id INTEGER,
+        chunk_text TEXT,
+        chunk_hash TEXT,
+        start_offset INTEGER,
+        end_offset INTEGER,
+        FOREIGN KEY(file_id) REFERENCES files(id)
+    )""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS labels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id INTEGER,
+        label TEXT,
+        source TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.commit()
+    return conn
+
+conn = init_db()
+
+def file_hash(path):
+    h = hashlib.sha256()
+    with open(path,'rb') as f:
+        for ch in iter(lambda: f.read(8192), b''):
+            h.update(ch)
+    return h.hexdigest()
+
+def chunk_text(text, max_chars=1000, overlap=200):
+    chunks = []
+    start = 0
+    L = len(text)
+    while start < L:
+        end = min(L, start + max_chars)
+        chunk = text[start:end]
+        chunks.append((start, end, chunk))
+        if end == L:
+            break
+        start = end - overlap
+    return chunks
+
+# Very small rule engine (filename-based) to propose a label
+def propose_label_from_filename(fname):
+    lower = fname.lower()
+    if "invoice" in lower or "bill" in lower or "statement" in lower:
+        return "Finance"
+    if "meeting" in lower or "notes" in lower or "agenda" in lower:
+        return "Work"
+    if "personal" in lower or "grocery" in lower or "note" in lower:
+        return "Personal"
+    return "Uncategorized"
+
+@app.post("/scan_folder")
+def scan_folder():
+    inserted = 0
+    for fname in os.listdir(SAMPLE_DIR):
+        path = os.path.join(SAMPLE_DIR, fname)
+        if not os.path.isfile(path):
+            continue
+        fh = file_hash(path)
+        size = os.path.getsize(path)
+        cur = conn.cursor()
+        cur.execute("INSERT OR IGNORE INTO files (file_path,file_name,file_hash,size,status,proposed_label) VALUES (?,?,?,?,?,?)",
+                    (path, fname, fh, size, "new", propose_label_from_filename(fname)))
+        conn.commit()
+        # fetch file id
+        cur.execute("SELECT id FROM files WHERE file_hash=?", (fh,))
+        row = cur.fetchone()
+        if not row:
+            continue
+        file_id = row[0]
+        # For simplicity we only read .txt files here. Add PDF/image OCR later.
+        text = ""
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".txt":
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    text = f.read()
+            except:
+                text = ""
+        # insert chunks
+        if text and text.strip():
+            chunks = chunk_text(text)
+            for s,e,t in chunks:
+                chash = hashlib.sha256((str(file_id)+str(s)+str(e)).encode()).hexdigest()
+                cur.execute("INSERT INTO chunks (file_id,chunk_text,chunk_hash,start_offset,end_offset) VALUES (?,?,?,?,?)",
+                            (file_id, t, chash, s, e))
+            conn.commit()
+            inserted += 1
+    return {"status":"scanned", "chunks_inserted": inserted}
+
+@app.get("/list_proposals")
+def list_proposals():
+    cur = conn.cursor()
+    cur.execute("SELECT id, file_name, proposed_label, final_label, status FROM files ORDER BY inserted_at DESC")
+    rows = cur.fetchall()
+    results = []
+    for r in rows:
+        results.append({"file_id": r[0], "file_name": r[1], "proposed_label": r[2], "final_label": r[3], "status": r[4]})
+    return results
+
+@app.post("/approve")
+def approve(payload: dict):
+    """
+    body: { "file_id": <id>, "label": "Finance" }
+    """
+    file_id = payload.get("file_id")
+    label = payload.get("label")
+    if not file_id or not label:
+        raise HTTPException(status_code=400, detail="file_id and label required")
+    cur = conn.cursor()
+    cur.execute("SELECT file_path, file_name FROM files WHERE id=?", (file_id,))
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="file not found")
+    path, fname = row
+    dest_dir = os.path.join(ORGANIZED_DIR, label)
+    os.makedirs(dest_dir, exist_ok=True)
+    try:
+        shutil.copy2(path, os.path.join(dest_dir, fname))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    cur.execute("UPDATE files SET final_label=?, status=? WHERE id=?", (label, "approved", file_id))
+    cur.execute("INSERT INTO labels (file_id,label,source) VALUES (?,?,?)", (file_id, label, "user"))
+    conn.commit()
+    return {"status":"approved", "file_id": file_id, "label": label}
