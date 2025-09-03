@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Clarifile Quick UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    button { margin: 4px; }
+    .card { border: 1px solid #ddd; padding: 8px; margin:8px 0; border-radius:6px; }
+    .flex { display:flex; gap:8px; align-items:center; }
+  </style>
+</head>
+<body>
+  <h2>Clarifile — Quick UI</h2>
+  <div class="flex">
+    <button id="btnScan">Scan</button>
+    <button id="btnEmbed">Embed</button>
+    <button id="btnReindex">Reindex</button>
+    <button id="btnProposals">Show Proposals</button>
+    <button id="btnDup">Show Duplicates</button>
+  </div>
+  <h3>Proposals</h3>
+  <div id="proposals"></div>
+
+  <h3>Duplicates</h3>
+  <div id="duplicates"></div>
+
+<script>
+const BASE = "http://127.0.0.1:4000";
+
+async function call(path, opts){
+  const res = await fetch(BASE + path, opts);
+  return res.json();
+}
+
+document.getElementById('btnScan').onclick = async ()=>{
+  const r = await call('/scan', { method:'POST' });
+  alert(JSON.stringify(r));
+};
+
+document.getElementById('btnEmbed').onclick = async ()=>{
+  const r = await call('/embed', { method:'POST' });
+  alert(JSON.stringify(r));
+};
+
+document.getElementById('btnReindex').onclick = async ()=>{
+  const r = await call('/reindex', { method:'POST' });
+  alert(JSON.stringify(r));
+};
+
+document.getElementById('btnProposals').onclick = async ()=>{
+  const list = await call('/proposals');
+  const container = document.getElementById('proposals');
+  container.innerHTML = '';
+  list.forEach(f=>{
+    const div = document.createElement('div');
+    div.className='card';
+    div.innerHTML = `<strong>${f.file_name || '(no name)'}</strong><br>
+      Proposed: <em>${f.proposed_label}</em> — Status: ${f.status || ''} <br>
+      <button data-id="${f.file_id}" data-label="${f.proposed_label}" class="approve">Approve as ${f.proposed_label}</button>
+      <input placeholder="Custom label" id="lbl${f.file_id}" style="margin-left:8px"/><button data-id="${f.file_id}" class="approveCustom">Approve Custom</button>`;
+    container.appendChild(div);
+  });
+  // attach handlers
+  document.querySelectorAll('.approve').forEach(b=>{
+    b.onclick = async (e)=>{
+      const id = b.dataset.id; const label = b.dataset.label || 'Uncategorized';
+      const r = await call('/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({file_id: parseInt(id), label})});
+      alert(JSON.stringify(r));
+    };
+  });
+  document.querySelectorAll('.approveCustom').forEach(b=>{
+    b.onclick = async ()=>{
+      const id = b.dataset.id;
+      const lbl = document.getElementById('lbl'+id).value || 'Uncategorized';
+      const r = await call('/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({file_id: parseInt(id), label: lbl})});
+      alert(JSON.stringify(r));
+    };
+  });
+};
+
+document.getElementById('btnDup').onclick = async ()=>{
+  const d = await call('/duplicates');
+  const container = document.getElementById('duplicates');
+  container.innerHTML = '';
+  if(d.exact.length===0 && d.near.length===0){
+    container.innerText = 'No duplicate candidates found.';
+    return;
+  }
+  function makePair(p, cls){
+    const div = document.createElement('div');
+    div.className='card';
+    div.innerHTML = `<strong>${cls} pair</strong><br> A: ${p.file_a} — B: ${p.file_b} — score: ${p.score.toFixed(3)}<br>
+      <button data-a="${p.file_a}" data-b="${p.file_b}" data-action="keep_a">Keep A</button>
+      <button data-a="${p.file_a}" data-b="${p.file_b}" data-action="keep_b">Keep B</button>
+      <button data-a="${p.file_a}" data-b="${p.file_b}" data-action="keep_both">Keep Both</button>`;
+    container.appendChild(div);
+  }
+  d.exact.forEach(p=> makePair(p, 'EXACT') );
+  d.near.forEach(p=> makePair(p, 'NEAR') );
+
+  // attach handlers
+  container.querySelectorAll('button').forEach(b=>{
+    b.onclick = async ()=>{
+      const file_a = parseInt(b.dataset.a);
+      const file_b = parseInt(b.dataset.b);
+      const action = b.dataset.action;
+      const r = await call('/resolve_duplicate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({file_a,file_b,action})});
+      alert(JSON.stringify(r));
+    };
+  });
+};
+</script>
+</body>
+</html>

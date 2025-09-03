@@ -1,14 +1,24 @@
 # services/parser/app.py
 from fastapi import FastAPI, HTTPException
-import os, sqlite3, hashlib, shutil, json
+import os, sqlite3, hashlib, shutil
 from typing import List
+from PIL import Image
+import fitz  # PyMuPDF
+import pytesseract
 
 DB = "metadata_db/clarifile.db"
 SAMPLE_DIR = "storage/sample_files"
 ORGANIZED_DIR = "storage/organized_demo"
-EMB_DIR = "storage/embeddings"
+ALLOWED_EXTS = {".txt", ".pdf", ".png", ".jpg", ".jpeg"}
 
 app = FastAPI()
+
+# If Tesseract is not on PATH, set this to your Tesseract install path, e.g.
+# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# The code tries a common path automatically:
+_possible = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+if os.path.exists(_possible):
+    pytesseract.pytesseract.tesseract_cmd = _possible
 
 def init_db():
     os.makedirs(os.path.dirname(DB), exist_ok=True)
@@ -66,7 +76,27 @@ def chunk_text(text, max_chars=1000, overlap=200):
         start = end - overlap
     return chunks
 
-# Very small rule engine (filename-based) to propose a label
+def extract_text_from_pdf(path):
+    text = ""
+    doc = fitz.open(path)
+    for page in doc:
+        page_text = page.get_text("text")
+        if page_text and page_text.strip():
+            text += page_text + "\n"
+        else:
+            # fallback to image OCR for scanned page
+            pix = page.get_pixmap(dpi=200)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            text += pytesseract.image_to_string(img) + "\n"
+    return text
+
+def extract_text_from_image(path):
+    try:
+        img = Image.open(path)
+        return pytesseract.image_to_string(img)
+    except Exception as e:
+        return ""
+
 def propose_label_from_filename(fname):
     lower = fname.lower()
     if "invoice" in lower or "bill" in lower or "statement" in lower:
@@ -84,28 +114,33 @@ def scan_folder():
         path = os.path.join(SAMPLE_DIR, fname)
         if not os.path.isfile(path):
             continue
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in ALLOWED_EXTS:
+            continue
         fh = file_hash(path)
         size = os.path.getsize(path)
         cur = conn.cursor()
         cur.execute("INSERT OR IGNORE INTO files (file_path,file_name,file_hash,size,status,proposed_label) VALUES (?,?,?,?,?,?)",
                     (path, fname, fh, size, "new", propose_label_from_filename(fname)))
         conn.commit()
-        # fetch file id
-        cur.execute("SELECT id FROM files WHERE file_hash=?", (fh,))
+        cur.execute("SELECT id FROM files WHERE file_hash=?",(fh,))
         row = cur.fetchone()
         if not row:
             continue
         file_id = row[0]
-        # For simplicity we only read .txt files here. Add PDF/image OCR later.
+
         text = ""
-        ext = os.path.splitext(path)[1].lower()
-        if ext == ".txt":
-            try:
+        try:
+            if ext == ".txt":
                 with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                     text = f.read()
-            except:
-                text = ""
-        # insert chunks
+            elif ext == ".pdf":
+                text = extract_text_from_pdf(path)
+            elif ext in {".png", ".jpg", ".jpeg"}:
+                text = extract_text_from_image(path)
+        except Exception as e:
+            text = ""
+
         if text and text.strip():
             chunks = chunk_text(text)
             for s,e,t in chunks:
@@ -128,9 +163,6 @@ def list_proposals():
 
 @app.post("/approve")
 def approve(payload: dict):
-    """
-    body: { "file_id": <id>, "label": "Finance" }
-    """
     file_id = payload.get("file_id")
     label = payload.get("label")
     if not file_id or not label:
