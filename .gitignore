@@ -41,3 +41,45 @@ Thumbs.db
 # Misc
 *.bak
 *.swp
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Mac system files
+*.DS_Store
+
+# Test and coverage outputs
+htmlcov/
+.coverage
+.tox/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Python virtualenv wrapper
+.venv/
+pip-wheel-metadata/
+__pypackages__/
+
+# Environment variables
+.env.local
+.env.*
+.envrc
+
+# Backup files
+*~
+*.bak
+
+# IDE settings (other than VSCode)
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# FastAPI auto-generated OpenAPI docs
+openapi.json

@@ -1,3 +1,4 @@
+<! ui/index.html> 
 <!doctype html>
 <html>
 <head>
@@ -59,33 +60,50 @@ document.getElementById('btnProposals').onclick = async ()=>{
   const container = document.getElementById('proposals');
   container.innerHTML = '';
   list.forEach(f=>{
+    const id = f.id;
+    const file_name = f.file || '(no name)';
+    const proposed_label = f.proposed || 'Uncategorized';
+    const status = f.final || '';
+    
     const div = document.createElement('div');
     div.className='card';
-    div.innerHTML = `<strong>${f.file_name || '(no name)'}</strong><br>
-      Proposed: <em>${f.proposed_label}</em> — Status: ${f.status || ''} <br>
-      <button data-id="${f.file_id}" data-label="${f.proposed_label}" class="approve">Approve as ${f.proposed_label}</button>
-      <input placeholder="Custom label" id="lbl${f.file_id}" style="margin-left:8px"/>
-      <button data-id="${f.file_id}" class="approveCustom">Approve Custom</button>
-      <button data-id="${f.file_id}" class="viewSummary">View Summary</button>
-      <div id="summary${f.file_id}" class="chunks" style="display:none"></div>`;
+    div.innerHTML = `<strong>${file_name}</strong><br>
+      Proposed: <em>${proposed_label}</em> — Status: ${status} <br>
+      <button data-id="${id}" data-label="${proposed_label}" class="approve">Approve as ${proposed_label}</button>
+      <input placeholder="Custom label" id="lbl${id}" style="margin-left:8px"/>
+      <button data-id="${id}" class="approveCustom">Approve Custom</button>
+      <button data-id="${id}" class="viewSummary">View Summary</button>
+      <div id="summary${id}" class="chunks" style="display:none"></div>`;
     container.appendChild(div);
   });
+  
   // attach handlers
   document.querySelectorAll('.approve').forEach(b=>{
     b.onclick = async (e)=>{
-      const id = b.dataset.id; const label = b.dataset.label || 'Uncategorized';
-      const r = await call('/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({file_id: parseInt(id), label})});
+      const id = b.dataset.id; 
+      const label = b.dataset.label || 'Uncategorized';
+      const r = await call('/approve', { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json'}, 
+        body: JSON.stringify({file_id: parseInt(id), label})
+      });
       alert(JSON.stringify(r));
     };
   });
+  
   document.querySelectorAll('.approveCustom').forEach(b=>{
     b.onclick = async ()=>{
       const id = b.dataset.id;
       const lbl = document.getElementById('lbl'+id).value || 'Uncategorized';
-      const r = await call('/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({file_id: parseInt(id), label: lbl})});
+      const r = await call('/approve', { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json'}, 
+        body: JSON.stringify({file_id: parseInt(id), label: lbl})
+      });
       alert(JSON.stringify(r));
     };
   });
+  
   document.querySelectorAll('.viewSummary').forEach(b=>{
     b.onclick = async ()=>{
       const id = b.dataset.id;
@@ -102,7 +120,6 @@ document.getElementById('btnProposals').onclick = async ()=>{
   });
 };
 
-// ...existing code...
 document.getElementById('btnDup').onclick = async ()=>{
   const d = await call('/duplicates');
   const container = document.getElementById('duplicates');
@@ -152,7 +169,6 @@ document.getElementById('btnDup').onclick = async ()=>{
     };
   });
 };
-// ...existing code...
 
 document.getElementById('btnCategories').onclick = async ()=>{
   const r = await fetch(`${BASE}/categories`);
@@ -162,7 +178,7 @@ document.getElementById('btnCategories').onclick = async ()=>{
   cats.forEach(c=>{
     const d = document.createElement('div');
     d.className='card';
-    d.innerHTML = `<strong>${c.name}</strong> — ${c.file_count} file(s)`;
+    d.innerHTML = `<strong>${c.name}</strong>`;
     el.appendChild(d);
   });
 };
