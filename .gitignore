@@ -1,13 +1,43 @@
-# Ignore Python virtual environment
-.venv/
-venv/
-
-# Ignore Python cache
+# Python artifacts
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.env
+*.venv
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
 
-# Ignore node_modules
+# Node.js artifacts
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Ignore local environment files
-.env
+# SQLite DB
+metadata_db/clarifile.db
+
+# Storage (generated files, embeddings, chunks, etc.)
+storage/chunks/
+storage/embeddings/
+storage/organized_demo/
+storage/sample_files/
+
+# VSCode settings
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid
+*.log
+
+# Misc
+*.bak
+*.swp
