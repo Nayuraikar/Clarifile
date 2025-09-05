@@ -79,4 +79,7 @@ app.get('/file_summary', async (req, res) => {
   catch (e) { res.status(500).json({error: e.toString()}); }
 });
 
+const path = require('path');
+app.use(express.static(path.join(__dirname, '../ui')));
+
 app.listen(4000, () => console.log('Gateway running on http://127.0.0.1:4000'));

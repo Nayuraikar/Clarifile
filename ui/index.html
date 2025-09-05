@@ -102,37 +102,57 @@ document.getElementById('btnProposals').onclick = async ()=>{
   });
 };
 
+// ...existing code...
 document.getElementById('btnDup').onclick = async ()=>{
   const d = await call('/duplicates');
   const container = document.getElementById('duplicates');
   container.innerHTML = '';
-  if(d.exact.length===0 && d.near.length===0){
+
+  const allGroups = d.duplicates || [];
+
+  if(allGroups.length === 0){
     container.innerText = 'No duplicate candidates found.';
     return;
   }
-  function makePair(p, cls){
+
+  function makePair(group) {
     const div = document.createElement('div');
-    div.className='card';
-    div.innerHTML = `<strong>${cls} pair</strong><br> A: ${p.file_a} — B: ${p.file_b} — score: ${p.score.toFixed(3)}<br>
-      <button data-a="${p.file_a}" data-b="${p.file_b}" data-action="keep_a">Keep A</button>
-      <button data-a="${p.file_a}" data-b="${p.file_b}" data-action="keep_b">Keep B</button>
-      <button data-a="${p.file_a}" data-b="${p.file_b}" data-action="keep_both">Keep Both</button>`;
+    div.className = 'card';
+
+    let inner = `<strong>Duplicate group ${group.group_id || ''}</strong> (${group.file_count} files)<br>`;
+    inner += `<em>Files with identical text content:</em><br>`;
+
+    for (let i = 0; i < group.files.length; i++) {
+      for (let j = i+1; j < group.files.length; j++) {
+        inner += `A: ${group.files[i].name} — B: ${group.files[j].name}<br>
+          <button data-a="${group.files[i].id}" data-b="${group.files[j].id}" data-action="keep_a">Keep A</button>
+          <button data-a="${group.files[i].id}" data-b="${group.files[j].id}" data-action="keep_b">Keep B</button>
+          <button data-a="${group.files[i].id}" data-b="${group.files[j].id}" data-action="keep_both">Keep Both</button><br>`;
+      }
+    }
+
+    div.innerHTML = inner;
     container.appendChild(div);
   }
-  d.exact.forEach(p=> makePair(p, 'EXACT') );
-  d.near.forEach(p=> makePair(p, 'NEAR') );
 
-  // attach handlers
+  allGroups.forEach(g => makePair(g));
+
+  // Attach handlers
   container.querySelectorAll('button').forEach(b=>{
     b.onclick = async ()=>{
       const file_a = parseInt(b.dataset.a);
       const file_b = parseInt(b.dataset.b);
       const action = b.dataset.action;
-      const r = await call('/resolve_duplicate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({file_a,file_b,action})});
+      const r = await call('/resolve_duplicate', { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json'}, 
+        body: JSON.stringify({file_a,file_b,action})
+      });
       alert(JSON.stringify(r));
     };
   });
 };
+// ...existing code...
 
 document.getElementById('btnCategories').onclick = async ()=>{
   const r = await fetch(`${BASE}/categories`);
