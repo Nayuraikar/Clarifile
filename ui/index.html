@@ -1,4 +1,3 @@
-<! ui/index.html> 
 <!doctype html>
 <html>
 <head>
@@ -33,15 +32,25 @@
   <div id="cats"></div>
 
 <script>
-const BASE = "http://127.0.0.1:4000";
+const BASE = "http://127.0.0.1:8000";
 
-async function call(path, opts){
+async function call(path, opts) {
   const res = await fetch(BASE + path, opts);
-  return res.json();
+  
+  // If no content returned, return a default object
+  if (res.status === 204) return { ok: true, message: "No content" };
+  
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch(e) {
+    console.error("Invalid JSON response:", text);
+    return { error: "Invalid JSON from server", raw: text };
+  }
 }
 
 document.getElementById('btnScan').onclick = async ()=>{
-  const r = await call('/scan', { method:'POST' });
+  const r = await call('/scan_folder', { method:'POST' });
   alert(JSON.stringify(r));
 };
 
@@ -56,7 +65,7 @@ document.getElementById('btnReindex').onclick = async ()=>{
 };
 
 document.getElementById('btnProposals').onclick = async ()=>{
-  const list = await call('/proposals');
+  const list = await call('/list_proposals');
   const container = document.getElementById('proposals');
   container.innerHTML = '';
   list.forEach(f=>{
@@ -73,7 +82,14 @@ document.getElementById('btnProposals').onclick = async ()=>{
       <input placeholder="Custom label" id="lbl${id}" style="margin-left:8px"/>
       <button data-id="${id}" class="approveCustom">Approve Custom</button>
       <button data-id="${id}" class="viewSummary">View Summary</button>
-      <div id="summary${id}" class="chunks" style="display:none"></div>`;
+      <button data-id="${id}" class="viewTags">Show Tags</button>
+      <div style="margin-top:6px">
+        <input id="q${id}" placeholder="Ask a question about this file..." style="width:60%"/>
+        <button data-id="${id}" class="askQA">Ask</button>
+      </div>
+      <div id="summary${id}" class="chunks" style="display:none"></div>
+      <div id="tags${id}" class="chunks" style="display:none"></div>
+      <div id="qa${id}" class="chunks" style="display:none"></div>`;
     container.appendChild(div);
   });
   
@@ -85,7 +101,7 @@ document.getElementById('btnProposals').onclick = async ()=>{
       const r = await call('/approve', { 
         method:'POST', 
         headers:{'Content-Type':'application/json'}, 
-        body: JSON.stringify({file_id: parseInt(id), label})
+        body: JSON.stringify({file_id: parseInt(id), final_label: label})
       });
       alert(JSON.stringify(r));
     };
@@ -98,7 +114,7 @@ document.getElementById('btnProposals').onclick = async ()=>{
       const r = await call('/approve', { 
         method:'POST', 
         headers:{'Content-Type':'application/json'}, 
-        body: JSON.stringify({file_id: parseInt(id), label: lbl})
+        body: JSON.stringify({file_id: parseInt(id), final_label: lbl})
       });
       alert(JSON.stringify(r));
     };
@@ -116,6 +132,30 @@ document.getElementById('btnProposals').onclick = async ()=>{
       }else{
         alert("No summary for file "+id);
       }
+    };
+  });
+
+  document.querySelectorAll('.viewTags').forEach(b=>{
+    b.onclick = async ()=>{
+      const id = b.dataset.id;
+      const r = await fetch(`${BASE}/file_entities?file_id=${id}`);
+      const j = await r.json();
+      const div = document.getElementById('tags'+id);
+      div.innerHTML = j.length ? j.map(e=>`${e.name} (${e.type} x${e.count})`).join(' • ') : '(no tags found)';
+      div.style.display = 'block';
+    };
+  });
+
+  document.querySelectorAll('.askQA').forEach(b=>{
+    b.onclick = async ()=>{
+      const id = b.dataset.id;
+      const q = document.getElementById('q'+id).value.trim();
+      if(!q) return alert('Type a question');
+      const r = await fetch(`${BASE}/ask?file_id=${id}&q=${encodeURIComponent(q)}`);
+      const j = await r.json();
+      const div = document.getElementById('qa'+id);
+      div.innerHTML = j.ok ? `<b>Answer:</b> ${j.answer}<br><small>score: ${j.score.toFixed(3)}</small>` : j.error;
+      div.style.display = 'block';
     };
   });
 };
@@ -154,7 +194,6 @@ document.getElementById('btnDup').onclick = async ()=>{
 
   allGroups.forEach(g => makePair(g));
 
-  // Attach handlers
   container.querySelectorAll('button').forEach(b=>{
     b.onclick = async ()=>{
       const file_a = parseInt(b.dataset.a);
@@ -178,10 +217,11 @@ document.getElementById('btnCategories').onclick = async ()=>{
   cats.forEach(c=>{
     const d = document.createElement('div');
     d.className='card';
-    d.innerHTML = `<strong>${c.name}</strong>`;
+    d.innerHTML = `<strong>${c.category}</strong> — ${c.file_count}`;
     el.appendChild(d);
   });
 };
+
 </script>
 </body>
 </html>
