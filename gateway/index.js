@@ -6,7 +6,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const PARSER = 'http://127.0.0.1:8001';
+const PARSER = 'http://127.0.0.1:8000';
 const EMBED = 'http://127.0.0.1:8002';
 const INDEXER = 'http://127.0.0.1:8003';
 const DEDUP = 'http://127.0.0.1:8004';
@@ -41,6 +41,13 @@ app.get('/knn', async (req, res) => {
 });
 
 app.get('/proposals', async (req, res) => {
+  try {
+    const r = await axios.get(`${PARSER}/list_proposals`);
+    res.json(r.data);
+  } catch (e) { res.status(500).json({error: e.toString()}); }
+});
+
+app.get('/list_proposals', async (req, res) => {
   try {
     const r = await axios.get(`${PARSER}/list_proposals`);
     res.json(r.data);

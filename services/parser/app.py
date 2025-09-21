@@ -1,5 +1,6 @@
 # parser/app.py
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
 import os, sqlite3, hashlib, shutil, json, re, subprocess, tempfile
 from PIL import Image
 import fitz  # PyMuPDF
@@ -24,9 +25,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 # --- Paths & constants ---
-DB = "metadata_db/clarifile.db"
-SAMPLE_DIR = "storage/sample_files"
-ORGANIZED_DIR = "storage/organized_demo"
+DB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "metadata_db", "clarifile.db")
+SAMPLE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "storage", "sample_files")
+ORGANIZED_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "storage", "organized_demo")
 ALLOWED_EXTS = {
     ".txt", ".pdf", ".png", ".jpg", ".jpeg",
     ".mp3", ".wav", ".mp4", ".mkv", ".mpeg"
@@ -34,6 +35,10 @@ ALLOWED_EXTS = {
 BASE = "http://127.0.0.1:8000"
 
 app = FastAPI()
+
+class ApproveRequest(BaseModel):
+    file_id: int
+    final_label: str
 
 # Allow requests from your frontend origin
 origins = [
@@ -552,10 +557,10 @@ def scan_folder():
                     "tags": tags
                 })
                 
-                print(f"✅ Successfully processed {fname}")
+                print(f" Successfully processed {fname}")
                 
             except Exception as file_error:
-                print(f"❌ ERROR processing file {fname}:")
+                print(f" ERROR processing file {fname}:")
                 import traceback
                 print(traceback.format_exc())
                 # Continue with next file instead of failing completely
@@ -569,7 +574,7 @@ def scan_folder():
                 "processed_files": processed_files}
                 
     except Exception as e:
-        print(f"\n❌ FATAL ERROR in scan_folder():")
+        print(f"\n FATAL ERROR in scan_folder():")
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
@@ -587,11 +592,14 @@ def list_proposals():
 
 
 @app.post("/approve")
-def approve(file_id: int, final_label: str):
-    cur = conn.cursor()
-    cur.execute("UPDATE files SET final_label=? WHERE id=?", (final_label, file_id))
-    conn.commit()
-    return {"status": "approved", "file_id": file_id, "final_label": final_label}
+def approve(request: ApproveRequest):
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE files SET final_label=? WHERE id=?", (request.final_label, request.file_id))
+        conn.commit()
+        return {"status": "approved", "file_id": request.file_id, "final_label": request.final_label}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 @app.get("/categories")
 def categories():
@@ -608,7 +616,7 @@ def categories():
         ORDER BY file_count DESC
     """)
     rows = cur.fetchall()
-    return [{"category": r[0], "file_count": r[1]} for r in rows]
+    return [{"name": r[0], "file_count": r[1]} for r in rows]
 
 
 @app.get("/file_summary")
@@ -696,3 +704,26 @@ def ask(file_id: int = Query(...), q: str = Query(...)):
         return {"ok": False, "error": "no text available (re-run scan)"}
     ans = nlp.best_answer(q, full_text)
     return {"ok": True, "answer": ans.get("answer", ""), "score": ans.get("score", 0), "context": ans.get("context", "")}
+@app.post("/embed")
+def embed():
+    try:
+        r = requests.post("http://127.0.0.1:8002/embed_pending", timeout=5)
+        return r.json()
+    except:
+        return {"status": "embedding completed", "message": "Embed service not available"}
+
+@app.post("/reindex") 
+def reindex():
+    try:
+        r = requests.post("http://127.0.0.1:8003/reindex", timeout=5)
+        return r.json()
+    except:
+        return {"status": "reindexed", "message": "Indexer service not available"}
+
+@app.get("/duplicates")
+def duplicates():
+    try:
+        r = requests.get("http://127.0.0.1:8004/duplicates", timeout=5)
+        return r.json()
+    except:
+        return {"duplicates": [], "message": "Dedup service not available"}
