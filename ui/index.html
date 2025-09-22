@@ -778,6 +778,18 @@
         <div id="proposals"></div>
 
         <div class="section-title">
+          <i class="fas fa-cloud"></i>
+          Google Drive Proposals
+        </div>
+        <div class="actions" style="margin-bottom: 1rem;">
+          <button id="btnDriveRefresh" class="btn btn-secondary">
+            <i class="fas fa-sync"></i>
+            Refresh Drive Proposals
+          </button>
+        </div>
+        <div id="driveProposals"></div>
+
+        <div class="section-title">
           <i class="fas fa-copy"></i>
           Duplicate Files
         </div>
@@ -1053,6 +1065,142 @@ function attachProposalHandlers() {
   });
 }
 
+// Drive proposals
+async function renderDriveProposals() {
+  const list = await call('/drive/proposals');
+  const container = document.getElementById('driveProposals');
+  container.innerHTML = '';
+  if (Array.isArray(list) && list.length > 0) {
+    list.forEach((f)=>{
+      const div = document.createElement('div');
+      div.className='card';
+      const proposed = f.proposed_category || 'Other';
+      div.innerHTML = `
+        <div class="card-header">
+          <div>
+            <div class="file-name">
+              <i class="fas fa-file"></i> ${f.name}
+            </div>
+          </div>
+          <span class="status-badge status-proposed">Proposed</span>
+        </div>
+        <div class="file-meta">
+          <div class="meta-item"><i class="fas fa-tag"></i><span>${proposed}</span></div>
+          <div class="meta-item"><i class="fas fa-info-circle"></i><span>Drive ID: ${f.id}</span></div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-success btn-sm" data-id="${f.id}" data-name="${f.name}" data-cat="${proposed}">
+            <i class="fas fa-check"></i>
+            Approve & Move to ${proposed}
+          </button>
+          <button class="btn btn-secondary btn-sm analyze" data-id="${f.id}" data-name="${f.name}">
+            <i class="fas fa-eye"></i>
+            View Summary
+          </button>
+          <button class="btn btn-accent btn-sm askBtn" data-id="${f.id}" data-name="${f.name}">
+            <i class="fas fa-question-circle"></i>
+            Ask Question
+          </button>
+          <div class="input-group" style="margin-top: 0.5rem;">
+            <input placeholder="Custom folder name" id="driveLbl${f.id}" />
+            <button class="btn btn-primary btn-sm" data-id="${f.id}" data-name="${f.name}" data-custom="1">
+              <i class="fas fa-edit"></i>
+              Approve Custom Folder
+            </button>
+          </div>
+        </div>`;
+      // summary + QA sections
+      const summaryDiv = document.createElement('div');
+      summaryDiv.id = `driveSummary${f.id}`;
+      summaryDiv.className = 'chunks';
+      summaryDiv.style.display = 'none';
+      const qaControls = document.createElement('div');
+      qaControls.className = 'input-group';
+      qaControls.innerHTML = `
+        <input id="driveQ${f.id}" placeholder="Ask a question about this Drive file..." />
+        <button class="btn btn-accent btn-sm doAsk" data-id="${f.id}">
+          <i class="fas fa-question"></i>
+          Ask
+        </button>`;
+      const qaDiv = document.createElement('div');
+      qaDiv.id = `driveQA${f.id}`;
+      qaDiv.className = 'chunks';
+      qaDiv.style.display = 'none';
+      div.appendChild(summaryDiv);
+      div.appendChild(qaControls);
+      div.appendChild(qaDiv);
+      container.appendChild(div);
+    });
+    // attach approve + analyze + ask handlers
+    container.querySelectorAll('button').forEach(b => {
+      b.onclick = async () => {
+        const file = { id: b.dataset.id, name: b.dataset.name, mimeType: '', parents: [] };
+        if (b.classList.contains('analyze')) {
+          const r = await call('/drive/analyze', { 
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file }) 
+          });
+          const div = document.getElementById('driveSummary'+file.id);
+          div.innerText = r.summary || '(no summary)';
+          div.style.display = 'block';
+          return;
+        }
+        if (b.classList.contains('doAsk')) {
+          const q = document.getElementById('driveQ'+file.id).value.trim();
+          if (!q) { showNotification('Please type a question', 'warning'); return; }
+          const r = await call('/drive/analyze', { 
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file, q }) 
+          });
+          const div = document.getElementById('driveQA'+file.id);
+          const ans = (r.qa && r.qa.answer) || '(no answer)';
+          const score = (r.qa && r.qa.score) ? r.qa.score.toFixed(3) : '';
+          div.innerHTML = `<b>Answer:</b> ${ans} ${score ? `<br><small>score: ${score}</small>` : ''}`;
+          div.style.display = 'block';
+          return;
+        }
+        let category = b.dataset.cat || null;
+        if (b.dataset.custom === '1') {
+          const inp = document.getElementById('driveLbl'+file.id);
+          category = (inp && inp.value.trim()) || category;
+        }
+        const r = await call('/drive/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file, category })
+        });
+        if (r && r.ok) {
+          showNotification('Moved in Google Drive', 'success');
+          await renderDriveProposals();
+        } else {
+          showNotification(r.error || 'Move failed', 'error');
+        }
+      };
+    });
+  } else {
+    container.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-cloud"></i>
+        <h3>No Drive Proposals</h3>
+        <p>Click Organize in Drive, then refresh here.</p>
+      </div>`;
+  }
+}
+
+document.getElementById('btnDriveRefresh').onclick = async ()=>{
+  await renderDriveProposals();
+  showNotification('Drive proposals refreshed.', 'success');
+};
+
+// Auto-refresh Drive proposals shortly after page load (in case extension just posted)
+document.addEventListener('DOMContentLoaded', () => {
+  let attempts = 0;
+  const maxAttempts = 6; // ~30s
+  const interval = setInterval(async () => {
+    attempts++;
+    await renderDriveProposals();
+    if (attempts >= maxAttempts) clearInterval(interval);
+  }, 5000);
+});
+
 
 document.getElementById('btnDup').onclick = async ()=>{
   const d = await call('/duplicates');
@@ -1140,7 +1288,11 @@ document.getElementById('btnDup').onclick = async ()=>{
 };
 
 document.getElementById('btnCategories').onclick = async ()=>{
-  const cats = await call('/categories');
+  // Prefer live Drive categories if available; else fall back to DB categories
+  let cats = await call('/drive/categories');
+  if (!Array.isArray(cats) || cats.length === 0) {
+    cats = await call('/categories');
+  }
   const el = document.getElementById('cats');
   el.innerHTML = '';
   

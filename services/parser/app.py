@@ -1,6 +1,7 @@
 # parser/app.py
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
+from fastapi import Query
 import os, sqlite3, hashlib, shutil, json, re, subprocess, tempfile
 from PIL import Image
 import fitz  # PyMuPDF
@@ -20,6 +21,9 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from services.parser import nlp
+from pydantic import BaseModel
+from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -40,16 +44,186 @@ class ApproveRequest(BaseModel):
     file_id: int
     final_label: str
 
+class DriveFile(BaseModel):
+    id: str
+    name: str
+    mimeType: str | None = None
+    parents: list[str] | None = None
+    size: int | None = None
+
+class OrganizeDriveFilesRequest(BaseModel):
+    files: list[DriveFile]
+    move: bool = False
+    auth_token: str | None = None
+    override_category: str | None = None
+
+class DriveAnalyzeRequest(BaseModel):
+    file: DriveFile
+    q: str | None = None
+    auth_token: str | None = None
+
+
+# --- Google Drive helpers ---
+def get_drive_service(token: str):
+    try:
+        creds = Credentials(token)
+        service = build('drive', 'v3', credentials=creds, cache_discovery=False)
+        return service
+    except Exception as e:
+        print("Error initializing Drive service:", e)
+        return None
+
+
+def get_or_create_folder(service, folder_name: str, parent_id: str | None = None) -> str | None:
+    if not service or not folder_name:
+        return None
+    try:
+        name_escaped = folder_name.replace("'", "\'")
+        if parent_id:
+            q = f"mimeType='application/vnd.google-apps.folder' and name = '{name_escaped}' and '{parent_id}' in parents and trashed = false"
+        else:
+            q = f"mimeType='application/vnd.google-apps.folder' and name = '{name_escaped}' and trashed = false"
+        res = service.files().list(q=q, fields="files(id,name)", pageSize=1, spaces='drive').execute()
+        files = res.get('files', [])
+        if files:
+            return files[0]['id']
+        file_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder',
+            **({'parents': [parent_id]} if parent_id else {})
+        }
+        created = service.files().create(body=file_metadata, fields='id').execute()
+        return created.get('id')
+    except Exception as e:
+        print("get_or_create_folder error:", e)
+        return None
+
+
+def move_file_to_folder(service, file_id: str, folder_id: str) -> dict | None:
+    if not service or not file_id or not folder_id:
+        return None
+
+
+def drive_download_file(token: str, file_id: str, out_dir: str) -> str | None:
+    """Download a Drive file to a temp path using the OAuth token.
+    Returns local file path, or None on failure.
+    """
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+        headers = {"Authorization": f"Bearer {token}"}
+        r = requests.get(url, headers=headers, stream=True, timeout=60)
+        r.raise_for_status()
+        tmp_path = os.path.join(out_dir, f"drive_{file_id}")
+        with open(tmp_path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        return tmp_path
+    except Exception as e:
+        print("drive_download_file error:", e)
+        return None
+
+
+def infer_category_from_extension(file_name: str, mime_type: str | None) -> str:
+    name_lower = (file_name or "").lower()
+    if name_lower.endswith((".mp3", ".wav", ".m4a", ".aac")) or (mime_type and mime_type.startswith("audio/")):
+        return "Audio"
+    if name_lower.endswith((".mp4", ".mkv", ".mov", ".avi")) or (mime_type and mime_type.startswith("video/")):
+        return "Video"
+    if name_lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")) or (mime_type and mime_type.startswith("image/")):
+        return "Images"
+    if name_lower.endswith((".pdf",)):
+        return "Documents"
+    if name_lower.endswith((".txt", ".md", ".rtf")):
+        return "Notes"
+    if name_lower.endswith((".ipynb", ".py", ".js", ".ts", ".java", ".cpp", ".c", ".cs")):
+        return "Technical"
+    if name_lower.endswith((".xlsx", ".xls", ".csv")):
+        return "Spreadsheets"
+    if name_lower.endswith((".ppt", ".pptx", ".key")):
+        return "Presentations"
+    if name_lower.endswith((".zip", ".rar", ".7z")):
+        return "Archives"
+    return "General"
+
+
+@app.post("/drive_analyze")
+def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)):
+    """Download the Drive file, extract text using existing extractors, summarize with Gemini,
+    and optionally answer a question against the text. Returns transient results (no DB write).
+    """
+    token = req.auth_token or auth_token
+    file = req.file
+    q = req.q
+    path = drive_download_file(token, file.id, tempfile.gettempdir())
+    if not path:
+        raise HTTPException(status_code=400, detail="Failed to download file from Drive")
+    try:
+        ext = os.path.splitext(file.name or path)[1].lower()
+        text = ""
+        tags = []
+        transcript = ""
+        if ext == ".txt":
+            text = read_text_file(path)
+        elif ext == ".pdf":
+            text = extract_text_from_pdf(path)
+        elif ext in {".png", ".jpg", ".jpeg"}:
+            text = extract_text_from_image(path)
+            tags.append(classify_image(path))
+        elif ext in {".mp3", ".wav"}:
+            transcript = transcribe_audio(path)
+            text = transcript
+        else:
+            # Fallback: try reading as text
+            text = read_text_file(path)
+
+        summary = summarize_text(text)
+        cat_id, cat_name = assign_category_from_summary(summary or (file.name or ""))
+
+        answer = None
+        score = 0
+        if q and text:
+            ans = nlp.best_answer(q, text)
+            answer = ans.get("answer", "")
+            score = ans.get("score", 0)
+
+        return {
+            "summary": summary or "",
+            "category": cat_name or "Uncategorized",
+            "category_id": cat_id,
+            "tags": tags,
+            "transcript": transcript,
+            "qa": {"answer": answer, "score": score} if q else None
+        }
+    finally:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+    try:
+        meta = service.files().get(fileId=file_id, fields='parents').execute()
+        previous_parents = ",".join(meta.get('parents', []))
+        updated = service.files().update(
+            fileId=file_id,
+            addParents=folder_id,
+            removeParents=previous_parents,
+            fields='id, parents'
+        ).execute()
+        return updated
+    except Exception as e:
+        print("move_file_to_folder error:", e)
+        return None
+
 # Allow requests from your frontend origin
-origins = [
-    "http://127.0.0.1:4000",
-    "http://localhost:4000"
-]
+# For development, allow all origins to support Chrome extension and local UI.
+# In production, replace with explicit origins including your extension ID.
+origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,   # or ["*"] to allow all origins (not recommended for prod)
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -727,3 +901,77 @@ def duplicates():
         return r.json()
     except:
         return {"duplicates": [], "message": "Dedup service not available"}
+
+
+# --- Google Drive integration ---
+@app.post("/organize_drive_files")
+def organize_drive_files(req: OrganizeDriveFilesRequest):
+    """Accepts a list of Google Drive file metadata, classifies them, and
+    returns suggested target categories/folders. Movement in Drive is optional
+    and should be performed client-side using the user's OAuth token.
+    """
+    organized = []
+    move_performed = False
+    drive_service = None
+    if req.move and req.auth_token:
+        drive_service = get_drive_service(req.auth_token)
+    for f in req.files:
+        file_name = f.name or ""
+        # Use Gemini to classify based on filename and mimeType when no text available
+        try:
+            if req.override_category:
+                category_name = req.override_category
+                category_id = None
+            else:
+                # First, attempt to extract a brief text snippet if easily available via metadata download
+                # Fall back to extension/mime-based heuristic to avoid 'Other'
+                fallback = infer_category_from_extension(file_name, f.mimeType)
+                prompt = (
+                    f"Given a Google Drive file, propose a concise, meaningful folder category. "
+                    f"Prefer common, human-understandable categories (e.g., Finance, Invoices, Work, Photos, Audio, Technical). "
+                    f"File name: {file_name}. MIME type: {f.mimeType or 'unknown'}. "
+                    f"If unsure, choose the closest general category instead of 'Other' or 'Uncategorized'. "
+                    f"Default to: {fallback} if strongly appropriate."
+                )
+                category_id, category_name = assign_category_from_summary(prompt)
+                if not category_name or category_name.lower() in {"other", "uncategorized"}:
+                    category_id, category_name = None, fallback
+        except Exception:
+            category_id, category_name = None, infer_category_from_extension(file_name, f.mimeType)
+
+        target_folder_id = None
+        if req.move and drive_service:
+            # Ensure folder is created in My Drive root (no parent) OR allow future parent selection
+            target_folder_id = get_or_create_folder(drive_service, (req.override_category or category_name or "Other"), None)
+            moved = move_file_to_folder(drive_service, f.id, target_folder_id) if target_folder_id else None
+            if moved:
+                move_performed = True
+
+        organized.append({
+            "id": f.id,
+            "name": f.name,
+            "proposed_category": req.override_category or category_name,
+            "category_id": category_id,
+            "target_folder_id": target_folder_id,
+            "mimeType": f.mimeType,
+            "parents": f.parents or []
+        })
+    return {"organized_files": organized, "move_performed": move_performed}
+
+
+@app.get("/organize_drive_files")
+def organize_drive_files_info():
+    return {
+        "message": "This endpoint accepts POST requests with Drive file metadata.",
+        "usage": {
+            "method": "POST",
+            "path": "/organize_drive_files",
+            "body": {"files": "list of Drive files", "move": "bool", "auth_token": "OAuth token"}
+        }
+    }
+
+
+@app.get("/favicon.ico")
+def favicon():
+    # Silence 404s from browsers requesting a favicon
+    return {}
