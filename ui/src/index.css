@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+:root {
+  --sand-50: #F5E7DE;
+  --sand-200: #F2BFA4;
+  --charcoal-900: #1E1A17;
+  --mink-500: #9A8F87;
+  --pearl-400: #C4B5AC;
+}
+
+.glass {
+  @apply bg-white/5 backdrop-blur-xl border border-pearl400/30 rounded-2xl;
+}
+
+/* Chat typing indicator */
+.typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.typing .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--pearl-400);
+  opacity: 0.6;
+  animation: blink 1.2s infinite ease-in-out;
+}
+.typing .dot:nth-child(2) { animation-delay: 0.2s; }
+.typing .dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.2; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+

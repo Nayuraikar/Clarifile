@@ -178,8 +178,26 @@ app.get('/file_summary', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
+// Ask about a local (scanned) file
+app.get('/ask', async (req, res) => {
+  try { const r = await axios.get(`${PARSER}/ask`, { params: req.query }); res.json(r.data); }
+  catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
 // ====== SERVE UI ======
-app.use(express.static(path.join(__dirname, '../ui')));
+// Prefer built React app if available (ui/dist), else fall back to legacy ui/
+const builtUi = path.join(__dirname, '../ui/dist');
+const legacyUi = path.join(__dirname, '../ui');
+try {
+  app.use(express.static(builtUi));
+  app.get('*', (req, res, next) => {
+    res.sendFile(path.join(builtUi, 'index.html'), (err) => {
+      if (err) next();
+    });
+  });
+} catch (_) {
+  app.use(express.static(legacyUi));
+}
 
 // ====== START SERVER ======
 app.listen(4000, () => console.log('Gateway running on http://127.0.0.1:4000'));

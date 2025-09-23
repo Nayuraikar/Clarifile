@@ -19,26 +19,70 @@ from nltk.tokenize import sent_tokenize
 
 # --- CONFIG ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEYS", "").split(",") if k.strip()]
+if not GEMINI_API_KEYS and GEMINI_API_KEY:
+    GEMINI_API_KEYS = [GEMINI_API_KEY]
+
+# Optional on-disk config: if no env keys, read from a local keys file
+if not GEMINI_API_KEYS:
+    default_keys_file = os.getenv("GEMINI_KEYS_FILE", os.path.join(os.path.dirname(__file__), "gemini_keys.txt"))
+    try:
+        if os.path.exists(default_keys_file):
+            with open(default_keys_file, "r", encoding="utf-8") as f:
+                raw = f.read()
+            parsed = []
+            for line in raw.replace("\n", ",").split(","):
+                s = line.strip()
+                if s:
+                    parsed.append(s)
+            if parsed:
+                GEMINI_API_KEYS = parsed
+    except Exception as _e:
+        # If file read fails, keep empty and error later at call-site
+        pass
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 GEMINI_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
-REQUEST_TIMEOUT = 60
-RETRY_COUNT = 2
-RETRY_BACKOFF = 0.6
+REQUEST_TIMEOUT = 45
+RETRY_COUNT = 1
+RETRY_BACKOFF = 0.8
+
+# Round-robin index for key rotation (in-memory)
+_KEY_INDEX = 0
 
 
 # --- Utilities ---
-def _safe_post(payload: dict, headers: dict):
-    """POST with retries and return JSON (or raise)."""
+def _safe_post_with_key_rotation(payload: dict):
+    """POST with retries and API key rotation; returns JSON (or raises).
+    - Tries current key, on 401/403/429 or network errors rotates to next key.
+    - Persists next starting key via module-level _KEY_INDEX.
+    """
+    global _KEY_INDEX
+    if not GEMINI_API_KEYS:
+        raise RuntimeError("No Gemini API keys configured. Set GEMINI_API_KEYS or GEMINI_API_KEY.")
+
     last_exc = None
+    total_keys = len(GEMINI_API_KEYS)
+
+    # Try each key at most once per attempt (with backoff between attempts)
     for attempt in range(RETRY_COUNT + 1):
-        try:
-            r = requests.post(GEMINI_ENDPOINT, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            last_exc = e
-            time.sleep(RETRY_BACKOFF * (attempt + 1))
+        for i in range(total_keys):
+            key = GEMINI_API_KEYS[_KEY_INDEX % total_keys]
+            _KEY_INDEX = (_KEY_INDEX + 1) % total_keys
+            headers = {"Content-Type": "application/json", "X-goog-api-key": key}
+            try:
+                r = requests.post(GEMINI_ENDPOINT, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
+                if r.status_code in (401, 403, 429):
+                    # rotate to next key and continue
+                    last_exc = requests.HTTPError(f"Gemini HTTP {r.status_code}")
+                    continue
+                r.raise_for_status()
+                return r.json()
+            except Exception as e:
+                last_exc = e
+                # try next key
+                continue
+        time.sleep(RETRY_BACKOFF * (attempt + 1))
     raise last_exc
 
 
@@ -73,18 +117,13 @@ def _extract_generated_text(resp_json: dict) -> str:
 
 
 # --- Gemini call ---
-def gemini_generate(prompt: str, temperature: float = 0.0, max_output_tokens: int = 512) -> str:
+def gemini_generate(prompt: str, temperature: float = 0.0, max_output_tokens: int = 256) -> str:
     """
     Call Gemini generateContent endpoint using API key.
     Returns the generated text or empty string on failure.
     """
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY not configured. Set environment variable GEMINI_API_KEY.")
-
-    headers = {
-        "Content-Type": "application/json",
-        "X-goog-api-key": GEMINI_API_KEY,
-    }
+    if not GEMINI_API_KEYS:
+        raise RuntimeError("Gemini API keys not configured. Set GEMINI_API_KEYS (comma-separated) or GEMINI_API_KEY.")
 
     payload = {
         "contents": [
@@ -97,7 +136,7 @@ def gemini_generate(prompt: str, temperature: float = 0.0, max_output_tokens: in
     }
 
     try:
-        resp_json = _safe_post(payload, headers)
+        resp_json = _safe_post_with_key_rotation(payload)
         return _extract_generated_text(resp_json)
     except requests.HTTPError as e:
         print(f"Gemini API HTTP error: {repr(e)}")

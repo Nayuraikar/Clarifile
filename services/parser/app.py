@@ -922,6 +922,7 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
     drive_service = None
     if req.move and req.auth_token:
         drive_service = get_drive_service(req.auth_token)
+    fast_mode = True  # speed-first categorization to avoid LLM rate/latency
     for f in req.files:
         # Skip folders entirely
         if (f.mimeType or "").strip() == 'application/vnd.google-apps.folder':
@@ -933,19 +934,9 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                 category_name = req.override_category
                 category_id = None
             else:
-                # First, attempt to extract a brief text snippet if easily available via metadata download
-                # Fall back to extension/mime-based heuristic to avoid 'Other'
+                # FAST: choose by extension/mime; skip LLM to reduce latency and 429s
                 fallback = infer_category_from_extension(file_name, f.mimeType)
-                prompt = (
-                    f"Given a Google Drive file, propose a concise, meaningful folder category. "
-                    f"Prefer common, human-understandable categories (e.g., Finance, Invoices, Work, Photos, Audio, Technical). "
-                    f"File name: {file_name}. MIME type: {f.mimeType or 'unknown'}. "
-                    f"If unsure, choose the closest general category instead of 'Other' or 'Uncategorized'. "
-                    f"Default to: {fallback} if strongly appropriate."
-                )
-                category_id, category_name = assign_category_from_summary(prompt)
-                if not category_name or category_name.lower() in {"other", "uncategorized"}:
-                    category_id, category_name = None, fallback
+                category_id, category_name = None, fallback
         except Exception:
             category_id, category_name = None, infer_category_from_extension(file_name, f.mimeType)
 
