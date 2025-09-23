@@ -333,7 +333,32 @@ def init_db():
     conn.commit()
     return conn
 
-conn = init_db()
+# Global database connection - will be initialized at startup
+conn = None
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database connection on startup."""
+    global conn
+    try:
+        print("Initializing database connection...")
+        conn = init_db()
+        print("✅ Database connection initialized successfully")
+    except Exception as e:
+        print(f"❌ Failed to initialize database: {e}")
+        raise
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database connection on shutdown."""
+    global conn
+    if conn:
+        try:
+            conn.close()
+            print("✅ Database connection closed")
+        except Exception as e:
+            print(f"❌ Error closing database connection: {e}")
+
 
 # --- Utilities ---
 def file_hash(path):
@@ -878,13 +903,68 @@ def entity_graph(min_count: int = 1, types: Optional[str] = None):
 @app.get("/ask")
 def ask(file_id: int = Query(...), q: str = Query(...)):
     cur = conn.cursor()
-    cur.execute("SELECT full_text FROM files WHERE id=?", (file_id,))
+    
+    # Get file information from database
+    cur.execute("SELECT file_path, file_name, full_text FROM files WHERE id=?", (file_id,))
     row = cur.fetchone()
-    full_text = row[0] if row else ""
-    if not full_text:
-        return {"ok": False, "error": "no text available (re-run scan)"}
-    ans = nlp.best_answer(q, full_text)
-    return {"ok": True, "answer": ans.get("answer", ""), "score": ans.get("score", 0), "context": ans.get("context", "")}
+    
+    if not row:
+        return {"ok": False, "error": "file not found"}
+    
+    file_path, file_name, full_text = row
+    
+    # If we already have text content, use it
+    if full_text and full_text.strip():
+        print(f"Using pre-extracted text for {file_name} ({len(full_text)} chars)")
+        ans = nlp.best_answer(q, full_text)
+        return {"ok": True, "answer": ans.get("answer", ""), "score": ans.get("score", 0), "context": ans.get("context", "")}
+    
+    # If no text content, try to extract it in real-time
+    if not file_path or not os.path.exists(file_path):
+        return {"ok": False, "error": "original file not accessible (re-run scan)"}
+    
+    print(f"Performing real-time text extraction for {file_name}")
+    
+    # Determine file type and extract text
+    ext = os.path.splitext(file_path)[1].lower()
+    extracted_text = ""
+    
+    try:
+        if ext == ".txt":
+            extracted_text = read_text_file(file_path)
+        elif ext == ".pdf":
+            extracted_text = extract_text_from_pdf(file_path)
+        elif ext in {".png", ".jpg", ".jpeg"}:
+            extracted_text = extract_text_from_image(file_path)
+        elif ext in {".mp3", ".wav"}:
+            extracted_text = transcribe_audio(file_path)
+        elif ext in {".mp4", ".mkv", ".mpeg"}:
+            transcript, frame_tags = process_video_ffmpeg(file_path)
+            extracted_text = transcript + " " + " ".join(frame_tags)
+        else:
+            return {"ok": False, "error": f"unsupported file type: {ext}"}
+        
+        if not extracted_text or not extracted_text.strip():
+            return {"ok": False, "error": "no extractable text content found"}
+        
+        print(f"Successfully extracted {len(extracted_text)} characters from {file_name}")
+        
+        # Update the database with the extracted text for future use
+        try:
+            cur.execute("UPDATE files SET full_text=? WHERE id=?", (extracted_text, file_id))
+            conn.commit()
+            print("Updated database with extracted text")
+        except Exception as e:
+            print(f"Warning: Could not update database with extracted text: {e}")
+        
+        # Generate answer using the extracted text
+        ans = nlp.best_answer(q, extracted_text)
+        return {"ok": True, "answer": ans.get("answer", ""), "score": ans.get("score", 0), "context": ans.get("context", "")}
+        
+    except Exception as e:
+        print(f"Error during real-time text extraction for {file_name}: {e}")
+        return {"ok": False, "error": f"text extraction failed: {str(e)}"}
+
 @app.post("/embed")
 def embed():
     try:

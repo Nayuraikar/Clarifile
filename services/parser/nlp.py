@@ -11,7 +11,19 @@ import time
 import requests
 import nltk
 import re
+import logging
 from typing import Dict
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(os.path.dirname(__file__), 'parser.log')),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # sentence tokenizer
 nltk.download("punkt", quiet=True)
@@ -31,12 +43,13 @@ if not GEMINI_API_KEYS:
             with open(default_keys_file, "r", encoding="utf-8") as f:
                 raw = f.read()
             parsed = []
-            for line in raw.replace("\n", ",").split(","):
+            for line in raw.strip().split("\n"):
                 s = line.strip()
                 if s:
                     parsed.append(s)
             if parsed:
                 GEMINI_API_KEYS = parsed
+                print(f"Loaded {len(GEMINI_API_KEYS)} API keys from {default_keys_file}")
     except Exception as _e:
         # If file read fails, keep empty and error later at call-site
         pass
@@ -44,11 +57,14 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 GEMINI_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 REQUEST_TIMEOUT = 45
-RETRY_COUNT = 1
-RETRY_BACKOFF = 0.8
+RETRY_COUNT = 3
+RETRY_BACKOFF = 1.0
+RATE_LIMIT_BACKOFF = 5.0
 
 # Round-robin index for key rotation (in-memory)
 _KEY_INDEX = 0
+_KEY_FAILURES = {}  # Track failures per key index
+_KEY_LAST_USED = {}  # Track last usage time per key index
 
 
 # --- Utilities ---
@@ -75,11 +91,15 @@ def _safe_post_with_key_rotation(payload: dict):
                 if r.status_code in (401, 403, 429):
                     # rotate to next key and continue
                     last_exc = requests.HTTPError(f"Gemini HTTP {r.status_code}")
+                    _KEY_FAILURES[_KEY_INDEX] = _KEY_FAILURES.get(_KEY_INDEX, 0) + 1
+                    if r.status_code == 429:
+                        time.sleep(RATE_LIMIT_BACKOFF)
                     continue
                 r.raise_for_status()
                 return r.json()
             except Exception as e:
                 last_exc = e
+                _KEY_FAILURES[_KEY_INDEX] = _KEY_FAILURES.get(_KEY_INDEX, 0) + 1
                 # try next key
                 continue
         time.sleep(RETRY_BACKOFF * (attempt + 1))
@@ -180,64 +200,6 @@ def smart_chunks(text: str, max_words: int = 600, stride: int = 120):
 # --- Main QA using Gemini ---
 def best_answer_or_summary(question: str, context_text: str) -> Dict:
     """
-    Use Gemini to answer question strictly from context_text.
-    """
-    if not question or not context_text:
-        return {"answer": "", "score": 0.0, "context": ""}
-
-    base_instruction = (
-        "You are a strict assistant. Use ONLY the information in the TEXT below to answer the QUESTION. "
-        "If the TEXT does not contain the requested info, reply exactly: I don't know.\n\n"
-    )
-
-    if len(context_text.split()) <= 1200:
-        prompt = f"{base_instruction}TEXT:\n{context_text}\n\nQUESTION:\n{question}\n\nANSWER:"
-        generated = gemini_generate(prompt, temperature=0.0, max_output_tokens=512)
-        return {"answer": generated.strip(), "score": 1.0 if generated else 0.0, "context": context_text}
-
-    # For long contexts
-    candidate_answers = []
-    for chunk in smart_chunks(context_text, max_words=600, stride=120):
-        prompt = f"{base_instruction}TEXT:\n{chunk}\n\nQUESTION:\n{question}\n\nANSWER:"
-        generated = gemini_generate(prompt, temperature=0.0, max_output_tokens=300)
-        if not generated:
-            continue
-        g = generated.strip()
-        if re.fullmatch(r"(?i)i\s*do(n'?| no)t know", g):
-            continue
-        candidate_answers.append((g, chunk))
-
-    if candidate_answers:
-        candidate_answers.sort(key=lambda x: len(x[0]), reverse=True)
-        best_ans, best_chunk = candidate_answers[0]
-        return {"answer": best_ans, "score": 1.0, "context": best_chunk}
-
-    # Final attempt across whole text
-    prompt = f"{base_instruction}TEXT:\n{context_text}\n\nQUESTION:\n{question}\n\nANSWER:"
-    final_generated = gemini_generate(prompt, temperature=0.0, max_output_tokens=400)
-    return {"answer": final_generated.strip(), "score": 1.0 if final_generated else 0.0, "context": context_text}
-
-
-# Backward compatibility
-best_answer = best_answer_or_summary
-
-
-def extract_entities(text: str):
-    """
-    Very lightweight entity extractor.
-    """
-    if not text:
-        return []
-    candidates = re.findall(r"\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\b", text)
-    uniques, seen = [], set()
-    for c in candidates:
-        if c.lower() not in seen:
-            seen.add(c.lower())
-            uniques.append({"name": c, "type": "ENTITY"})
-    return uniques
-
-def best_answer_or_summary(question: str, context_text: str) -> Dict:
-    """
     Use Gemini to answer a question from context_text.
     Now tuned to be less strict and give fuller answers.
     """
@@ -276,7 +238,24 @@ def best_answer_or_summary(question: str, context_text: str) -> Dict:
     return {"answer": final_generated.strip(), "score": 1.0 if final_generated else 0.0, "context": context_text}
 
 
-# --- NEW: Gemini summarizer ---
+# Backward compatibility
+best_answer = best_answer_or_summary
+
+
+def extract_entities(text: str):
+    """
+    Very lightweight entity extractor.
+    """
+    if not text:
+        return []
+    candidates = re.findall(r"\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\b", text)
+    uniques, seen = [], set()
+    for c in candidates:
+        if c.lower() not in seen:
+            seen.add(c.lower())
+            uniques.append({"name": c, "type": "ENTITY"})
+    return uniques
+
 def summarize_with_gemini(long_text: str, max_tokens: int = 512) -> str:
     if not long_text.strip():
         return ""

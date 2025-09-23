@@ -1,0 +1,16 @@
+This is a test document for the Clarifile system.
+
+It contains information about artificial intelligence and machine learning.
+
+Artificial intelligence (AI) is a branch of computer science that aims to create intelligent machines that work and react like humans. Machine learning is a subset of AI that enables systems to learn and improve from experience without being explicitly programmed.
+
+The main applications of AI include:
+1. Natural language processing
+2. Computer vision
+3. Speech recognition
+4. Expert systems
+5. Robotics
+
+Machine learning algorithms build mathematical models based on sample data, known as "training data", in order to make predictions or decisions without being explicitly programmed to perform the task.
+
+This document can be used to test the ask functionality of the Clarifile system.
