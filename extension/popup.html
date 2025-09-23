@@ -5,16 +5,21 @@
     <title>Clarifile</title>
     <style>
       body { font-family: system-ui, Arial, sans-serif; min-width: 300px; padding: 12px; }
-      button { background: #1a73e8; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
       pre { white-space: pre-wrap; }
+      button { background: #1a73e8; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
     </style>
   </head>
   <body>
     <h3>Clarifile Organizer</h3>
+
+    <!-- Authorize button for OAuth -->
+    <button id="authorize">Authorize Drive</button>
+
+    <!-- Organize button -->
     <button id="organize">Organize Drive Files</button>
+
     <pre id="out"></pre>
+
     <script src="popup.js"></script>
   </body>
-  </html>
-
-
+</html>

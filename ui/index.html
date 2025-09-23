@@ -1187,7 +1187,9 @@ async function renderDriveProposals() {
 
 document.getElementById('btnDriveRefresh').onclick = async ()=>{
   await renderDriveProposals();
-  showNotification('Drive proposals refreshed.', 'success');
+  await renderDuplicates();
+  await renderCategories();
+  showNotification('Drive proposals, duplicates, and categories refreshed.', 'success');
 };
 
 // Auto-refresh Drive proposals shortly after page load (in case extension just posted)
@@ -1202,12 +1204,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-document.getElementById('btnDup').onclick = async ()=>{
+async function renderDuplicates(){
   const d = await call('/duplicates');
   const container = document.getElementById('duplicates');
   container.innerHTML = '';
 
-  const allGroups = d.duplicates || [];
+  const allGroupsRaw = d.duplicates || [];
+  // Filter out groups with fewer than 2 unique files and ensure no self-comparison
+  const allGroups = allGroupsRaw
+    .map(g => ({
+      ...g,
+      files: Array.from(new Map((g.files || []).map(f => [String(f.id), f])).values())
+    }))
+    .filter(g => (g.files || []).length >= 2);
 
   if(allGroups.length === 0){
     container.innerText = 'No duplicate candidates found.';
@@ -1221,7 +1230,7 @@ document.getElementById('btnDup').onclick = async ()=>{
     let inner = `
       <h4>
         <i class="fas fa-copy"></i>
-        Duplicate Group ${group.group_id || ''} (${group.file_count} files)
+        Duplicate Group ${group.group_id || ''} (${group.files.length} files)
       </h4>
       
       <div class="file-list">
@@ -1229,8 +1238,7 @@ document.getElementById('btnDup').onclick = async ()=>{
           <i class="fas fa-info-circle"></i> Files with identical content:
         </div>`;
     
-    // List all files in the group
-    group.files.forEach((file, index) => {
+    group.files.forEach((file) => {
       inner += `
         <div class="file-item">
           <i class="fas fa-file"></i>
@@ -1240,31 +1248,29 @@ document.getElementById('btnDup').onclick = async ()=>{
     
     inner += `</div>`;
     
-    // Only show actions for the first two files to avoid confusion
-    if (group.files.length >= 2) {
-      const fileA = group.files[0];
-      const fileB = group.files[1];
-      inner += `
-        <div style="margin-top: 1rem;">
-          <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--gray-700);">
-            <i class="fas fa-cog"></i> Choose Action:
-          </div>
-          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-            <button data-a="${fileA.id}" data-b="${fileB.id}" data-action="keep_a" class="btn btn-success btn-sm">
-              <i class="fas fa-check"></i>
-              Keep ${fileA.name}
-            </button>
-            <button data-a="${fileA.id}" data-b="${fileB.id}" data-action="keep_b" class="btn btn-success btn-sm">
-              <i class="fas fa-check"></i>
-              Keep ${fileB.name}
-            </button>
-            <button data-a="${fileA.id}" data-b="${fileB.id}" data-action="keep_both" class="btn btn-warning btn-sm">
-              <i class="fas fa-plus"></i>
-              Keep Both
-            </button>
-          </div>
-        </div>`;
-    }
+    // Show actions for first two unique files
+    const fileA = group.files[0];
+    const fileB = group.files[1];
+    inner += `
+      <div style="margin-top: 1rem;">
+        <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--gray-700);">
+          <i class="fas fa-cog"></i> Choose Action:
+        </div>
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <button data-a="${fileA.id}" data-b="${fileB.id}" data-action="keep_a" class="btn btn-success btn-sm">
+            <i class="fas fa-check"></i>
+            Keep ${fileA.name}
+          </button>
+          <button data-a="${fileA.id}" data-b="${fileB.id}" data-action="keep_b" class="btn btn-success btn-sm">
+            <i class="fas fa-check"></i>
+            Keep ${fileB.name}
+          </button>
+          <button data-a="${fileA.id}" data-b="${fileB.id}" data-action="keep_both" class="btn btn-warning btn-sm">
+            <i class="fas fa-plus"></i>
+            Keep Both
+          </button>
+        </div>
+      </div>`;
 
     div.innerHTML = inner;
     container.appendChild(div);
@@ -1282,20 +1288,23 @@ document.getElementById('btnDup').onclick = async ()=>{
         headers:{'Content-Type':'application/json'}, 
         body: JSON.stringify({file_a,file_b,action})
       });
-      showNotification(`File approved as ${label}`, 'success');
+      const msg = r && r.ok ? 'Duplicate action applied' : (r && r.message) || 'Duplicate action applied';
+      showNotification(msg, 'success');
     };
   });
+}
+
+document.getElementById('btnDup').onclick = async ()=>{
+  await renderDuplicates();
 };
 
-document.getElementById('btnCategories').onclick = async ()=>{
-  // Prefer live Drive categories if available; else fall back to DB categories
+async function renderCategories(){
   let cats = await call('/drive/categories');
   if (!Array.isArray(cats) || cats.length === 0) {
     cats = await call('/categories');
   }
   const el = document.getElementById('cats');
   el.innerHTML = '';
-  
   if (cats && cats.length > 0) {
     cats.forEach(c=>{
       const d = document.createElement('div');
@@ -1315,6 +1324,10 @@ document.getElementById('btnCategories').onclick = async ()=>{
         <p>Scan documents first to generate categories</p>
       </div>`;
   }
+}
+
+document.getElementById('btnCategories').onclick = async ()=>{
+  await renderCategories();
 };
 
 

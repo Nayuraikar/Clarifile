@@ -21,13 +21,13 @@
     btn.onclick = async () => {
       chrome.runtime.sendMessage({ type: 'LIST_FILES' }, (resp) => {
         if (!resp || !resp.ok) {
-          alert('❌ Failed to fetch Drive files');
+          alert(' Failed to fetch Drive files');
           return;
         }
         const { files, token } = resp;
         chrome.runtime.sendMessage({ type: 'ORGANIZE_FILES', token, files }, (r) => {
           if (!r || !r.ok) {
-            alert('⚠️ Failed to organize via gateway');
+            alert(' Failed to organize via gateway');
             return;
           }
           const data = r.data || {};
@@ -45,8 +45,8 @@
   obs.observe(document.documentElement, { childList: true, subtree: true });
 })();
 
-// ✅ Listen for messages (from popup/background)
+//  Listen for messages (from popup/background)
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  console.log("📩 Message received in content script:", msg);
+  console.log(" Message received in content script:", msg);
   sendResponse({ received: true });
 });

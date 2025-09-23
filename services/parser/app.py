@@ -49,7 +49,10 @@ class DriveFile(BaseModel):
     name: str
     mimeType: str | None = None
     parents: list[str] | None = None
-    size: int | None = None
+    size: int | str | None = None
+
+    class Config:
+        extra = 'allow'
 
 class OrganizeDriveFilesRequest(BaseModel):
     files: list[DriveFile]
@@ -58,9 +61,13 @@ class OrganizeDriveFilesRequest(BaseModel):
     override_category: str | None = None
 
 class DriveAnalyzeRequest(BaseModel):
-    file: DriveFile
+    # Accept any file shape to avoid validation 422s
+    file: dict
     q: str | None = None
     auth_token: str | None = None
+
+    class Config:
+        extra = 'allow'
 
 
 # --- Google Drive helpers ---
@@ -102,7 +109,19 @@ def get_or_create_folder(service, folder_name: str, parent_id: str | None = None
 def move_file_to_folder(service, file_id: str, folder_id: str) -> dict | None:
     if not service or not file_id or not folder_id:
         return None
-
+    try:
+        meta = service.files().get(fileId=file_id, fields='parents').execute()
+        previous_parents = ",".join(meta.get('parents', []))
+        updated = service.files().update(
+            fileId=file_id,
+            addParents=folder_id,
+            removeParents=previous_parents,
+            fields='id, parents'
+        ).execute()
+        return updated
+    except Exception as e:
+        print("move_file_to_folder error:", e)
+        return None
 
 def drive_download_file(token: str, file_id: str, out_dir: str) -> str | None:
     """Download a Drive file to a temp path using the OAuth token.
@@ -154,13 +173,14 @@ def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)
     and optionally answer a question against the text. Returns transient results (no DB write).
     """
     token = req.auth_token or auth_token
-    file = req.file
+    file = req.file or {}
     q = req.q
-    path = drive_download_file(token, file.id, tempfile.gettempdir())
+    file_id = file.get('id')
+    path = drive_download_file(token, file_id, tempfile.gettempdir())
     if not path:
         raise HTTPException(status_code=400, detail="Failed to download file from Drive")
     try:
-        ext = os.path.splitext(file.name or path)[1].lower()
+        ext = os.path.splitext((file.get('name') or path))[1].lower()
         text = ""
         tags = []
         transcript = ""
@@ -179,7 +199,7 @@ def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)
             text = read_text_file(path)
 
         summary = summarize_text(text)
-        cat_id, cat_name = assign_category_from_summary(summary or (file.name or ""))
+        cat_id, cat_name = assign_category_from_summary(summary or (file.get('name') or ""))
 
         answer = None
         score = 0
@@ -201,19 +221,6 @@ def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)
             os.remove(path)
         except Exception:
             pass
-    try:
-        meta = service.files().get(fileId=file_id, fields='parents').execute()
-        previous_parents = ",".join(meta.get('parents', []))
-        updated = service.files().update(
-            fileId=file_id,
-            addParents=folder_id,
-            removeParents=previous_parents,
-            fields='id, parents'
-        ).execute()
-        return updated
-    except Exception as e:
-        print("move_file_to_folder error:", e)
-        return None
 
 # Allow requests from your frontend origin
 # For development, allow all origins to support Chrome extension and local UI.
@@ -916,6 +923,9 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
     if req.move and req.auth_token:
         drive_service = get_drive_service(req.auth_token)
     for f in req.files:
+        # Skip folders entirely
+        if (f.mimeType or "").strip() == 'application/vnd.google-apps.folder':
+            continue
         file_name = f.name or ""
         # Use Gemini to classify based on filename and mimeType when no text available
         try:
@@ -944,7 +954,7 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
             # Ensure folder is created in My Drive root (no parent) OR allow future parent selection
             target_folder_id = get_or_create_folder(drive_service, (req.override_category or category_name or "Other"), None)
             moved = move_file_to_folder(drive_service, f.id, target_folder_id) if target_folder_id else None
-            if moved:
+            if moved and moved.get('id'):
                 move_performed = True
 
         organized.append({
