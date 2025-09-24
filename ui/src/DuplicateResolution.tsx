@@ -36,84 +36,51 @@ const DuplicateResolution: React.FC<DuplicateResolutionProps> = ({
   setNotification,
   refreshDups
 }) => {
-  const handleResolveDuplicates = async () => {
-    // Find which file is selected to keep
-    const selectedFileId = Object.keys(duplicateResolution).find(id => 
-      duplicateResolution[id] === true && group.files.some((f: File) => f.id === id)
-    );
-    
-    if (!selectedFileId) {
-      alert('Please select which file to keep');
-      return;
-    }
-    
-    const selectedFile = group.files.find((f: File) => f.id === selectedFileId);
-    const filesToDelete = group.files.filter((f: File) => f.id !== selectedFileId);
-    
-    if (confirm(`Are you sure you want to keep "${selectedFile?.name}" and delete ${filesToDelete.length} duplicate(s)?`)) {
+  const handleKeep = async (file: File) => {
+    try {
       setDuplicateResolutionLoading(true);
-      try {
-        // For each file to delete, call the backend to resolve the duplicate
-        for (const fileToDelete of filesToDelete) {
-          await call('/resolve_duplicate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              file_a: selectedFileId,
-              file_b: fileToDelete.id,
-              action: 'keep_a'
-            })
-          });
-        }
-        
-        // Show success message
-        setNotification(`Successfully resolved duplicates. Kept "${selectedFile?.name}" and deleted ${filesToDelete.length} duplicate(s).`);
-        
-        // Clear the selection
-        setDuplicateResolution(prev => {
-          const newResolution = { ...prev };
-          group.files.forEach((f: File) => {
-            delete newResolution[f.id];
-          });
-          return newResolution;
-        });
-        
-        // Refresh the duplicates list
-        await refreshDups();
-        
-      } catch (error) {
-        console.error('Error resolving duplicates:', error);
-        setNotification('Error resolving duplicates. Please try again.');
-      } finally {
-        setDuplicateResolutionLoading(false);
-      }
+      await call('/drive/keep', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: file.id })
+      });
+      setNotification(`Kept "${file.name}"`);
+      await refreshDups();
+    } catch (e) {
+      console.error('Error keeping file:', e);
+      setNotification('Error keeping file. Please try again.');
+    } finally {
+      setDuplicateResolutionLoading(false);
+    }
+  };
+
+  const handleDelete = async (file: File) => {
+    if (!confirm(`Delete "${file.name}" from Drive? This action cannot be undone.`)) return;
+    try {
+      setDuplicateResolutionLoading(true);
+      const resp = await call('/drive/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: file.id })
+      });
+      if (resp?.error) throw new Error(String(resp.error));
+      setNotification(`Deleted "${file.name}"`);
+      await refreshDups();
+    } catch (e) {
+      console.error('Error deleting file:', e);
+      setNotification('Error deleting file. Please try again.');
+    } finally {
+      setDuplicateResolutionLoading(false);
     }
   };
 
   const handleClearSelection = () => {
-    // Clear selection for this group
-    setDuplicateResolution(prev => {
-      const newResolution = { ...prev };
-      group.files.forEach((f: File) => {
-        delete newResolution[f.id];
-      });
-      return newResolution;
-    });
+    // No-op in Drive mode; preserved for compatibility
+    setDuplicateResolution({});
   };
 
-  const handleFileSelection = (fileId: string) => {
-    setDuplicateResolution(prev => {
-      const newResolution = { ...prev };
-      // Clear all other selections in this group
-      group.files.forEach((f: File) => {
-        if (f.id !== fileId) {
-          delete newResolution[f.id];
-        }
-      });
-      // Set this file as the one to keep
-      newResolution[fileId] = true;
-      return newResolution;
-    });
+  const handleFileSelection = (_fileId: string) => {
+    // No-op in Drive mode
   };
 
   return (
@@ -124,52 +91,37 @@ const DuplicateResolution: React.FC<DuplicateResolutionProps> = ({
       </div>
       
       <div className="space-y-3">
-        {group.files.map((file: File, fileIndex: number) => (
+        {group.files.map((file: File) => (
           <div key={file.id} className="flex items-center justify-between p-4 bg-bg-secondary rounded-xl">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">📄</span>
               <div>
                 <div className="font-medium text-text-primary">{file.name}</div>
                 <div className="text-sm text-text-muted">
                   {file.size ? `${file.size} bytes` : 'Size unknown'}
-                  {file.label && ` • Category: ${file.label}`}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <input
-                type="radio"
-                name={`duplicate-group-${groupIndex}`}
-                id={`keep-${file.id}`}
-                checked={duplicateResolution[file.id] === true}
-                onChange={() => handleFileSelection(file.id)}
-                className="w-4 h-4 text-accent-primary bg-bg-secondary border-text-muted rounded focus:ring-accent-primary"
-              />
-              <label htmlFor={`keep-${file.id}`} className="text-sm font-medium text-text-primary cursor-pointer">
-                Keep this one
-              </label>
+              <button
+                onClick={() => handleKeep(file)}
+                disabled={duplicateResolutionLoading}
+                className="px-3 py-2 text-sm font-medium text-text-primary bg-bg-secondary border border-text-muted rounded-lg hover:bg-bg-tertiary disabled:opacity-50"
+              >
+                Keep
+              </button>
+              <button
+                onClick={() => handleDelete(file)}
+                disabled={duplicateResolutionLoading}
+                className="px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:opacity-90 disabled:opacity-50"
+              >
+                Delete
+              </button>
             </div>
           </div>
         ))}
       </div>
       
-      <div className="mt-6 flex justify-end gap-3">
-        <button
-          onClick={handleClearSelection}
-          className="px-4 py-2 text-sm font-medium text-text-primary bg-bg-secondary border border-text-muted rounded-lg hover:bg-bg-tertiary focus:outline-none focus:ring-2 focus:ring-accent-primary"
-        >
-          Clear Selection
-        </button>
-        <button
-          onClick={handleResolveDuplicates}
-          disabled={duplicateResolutionLoading || !Object.keys(duplicateResolution).some(id => 
-            duplicateResolution[id] === true && group.files.some((f: File) => f.id === id)
-          )}
-          className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-accent-primary to-accent-secondary rounded-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-accent-primary disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {duplicateResolutionLoading ? 'Resolving...' : 'Resolve Duplicates'}
-        </button>
-      </div>
+      <div className="mt-6 flex justify-end gap-3"/>
     </div>
   );
 };

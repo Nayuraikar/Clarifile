@@ -342,10 +342,10 @@ async def startup_event():
     global conn
     try:
         print("Initializing database connection...")
-conn = init_db()
-        print("✅ Database connection initialized successfully")
+        conn = init_db()
+        print(" Database connection initialized successfully")
     except Exception as e:
-        print(f"❌ Failed to initialize database: {e}")
+        print(f" Failed to initialize database: {e}")
         raise
 
 @app.on_event("shutdown")
@@ -800,10 +800,10 @@ def list_proposals():
 @app.post("/approve")
 def approve(file_id: int, final_label: str):
     try:
-    cur = conn.cursor()
-    cur.execute("UPDATE files SET final_label=? WHERE id=?", (final_label, file_id))
-    conn.commit()
-    return {"status": "approved", "file_id": file_id, "final_label": final_label}
+        cur = conn.cursor()
+        cur.execute("UPDATE files SET final_label=? WHERE id=?", (final_label, file_id))
+        conn.commit()
+        return {"status": "approved", "file_id": file_id, "final_label": final_label}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -129,27 +129,35 @@ def find_duplicates():
         hash_to_files = {}
 
         for file_id, file_path, file_name in files:
-            if not os.path.exists(file_path):
+            # Normalize and validate path first to avoid counting the same file twice
+            if not file_path:
+                continue
+            norm_path = os.path.normcase(os.path.abspath(file_path))
+            if not os.path.exists(norm_path):
                 continue
 
             # Choose hash method based on file type
-            if is_text_or_pdf_file(file_path):
+            if is_text_or_pdf_file(norm_path):
                 # For text files and PDFs, use exact content comparison
-                file_hash = compute_exact_content_hash(file_path)
+                file_hash = compute_exact_content_hash(norm_path)
                 logger.info(f"Text/PDF file {file_name}: using exact hash")
             else:
                 # For other files (images, binaries), use normalized text hash
-                file_hash = compute_normalized_text_hash(file_path)
+                file_hash = compute_normalized_text_hash(norm_path)
                 logger.info(f"Binary file {file_name}: using normalized hash")
 
-            if file_hash:
-                if file_hash not in hash_to_files:
-                    hash_to_files[file_hash] = []
-                hash_to_files[file_hash].append({
-                    "id": file_id,
-                    "path": file_path,
-                    "name": file_name
-                })
+            if not file_hash:
+                continue
+
+            lst = hash_to_files.setdefault(file_hash, [])
+            # Avoid duplicates of the same normalized file path within the same hash group
+            if any(f.get("path") == norm_path for f in lst):
+                continue
+            lst.append({
+                "id": file_id,
+                "path": norm_path,
+                "name": file_name or os.path.basename(norm_path)
+            })
 
         # Find groups with multiple files (duplicates)
         duplicate_groups = []
@@ -160,7 +168,8 @@ def find_duplicates():
                 duplicate_groups.append({
                     "group_id": f"group_{group_id}",
                     "file_count": len(file_list),
-                    "files": [{"id": f["id"], "name": f["name"]} for f in file_list]
+                    # include path to aid UI and to avoid confusing the same file counted twice
+                    "files": [{"id": f["id"], "name": f["name"], "path": f.get("path")} for f in file_list]
                 })
                 group_id += 1
 

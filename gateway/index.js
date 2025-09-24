@@ -12,20 +12,95 @@ app.use(cors());
 const PARSER = 'http://127.0.0.1:8000';
 const EMBED = 'http://127.0.0.1:8002';
 const INDEXER = 'http://127.0.0.1:8003';
-// Duplicates are now handled by the parser directly
+const DEDUP = 'http://127.0.0.1:8004';
+// Duplicates are handled by the dedicated dedup service
 
 let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = '36164233493-v3k62o8s731gidnl6j9il8n3otam0gsm.apps.googleusercontent.com'; 
-const CLIENT_SECRET = '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';                         
-const REDIRECT_URI = 'https://edhenpbomahoffphfnidddbhfaddcmoj.chromiumapp.org/';      
+const CLIENT_ID = '455192139473-6s9u7fqkght1on8pf0rqbd447a1vs63h.apps.googleusercontent.com'; 
+const CLIENT_SECRET = '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';                         
+const REDIRECT_URI = 'https://ohikgmkhnnlblfljijlhdpnfdhlpbbni.chromiumapp.org/';    
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
   try { const r = await axios.post(`${PARSER}/scan_folder`); res.json(r.data); }
   catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Create (or find) a Drive folder by name. Optionally accepts parentId.
+app.post('/drive/create_folder', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const name = (req.body?.name || '').trim();
+    const parentId = (req.body?.parentId || '').trim();
+    if (!name) return res.status(400).json({ error: 'missing folder name' });
+
+    // First, try to find an existing folder with this name (optionally under parent)
+    const qParts = [
+      "mimeType='application/vnd.google-apps.folder'",
+      'trashed=false',
+      `name='${name.replace(/'/g, "\\'")}'`
+    ];
+    if (parentId) qParts.push(`'${parentId}' in parents`);
+    const q = qParts.join(' and ');
+    const findResp = await axios.get('https://www.googleapis.com/drive/v3/files', {
+      params: { q, fields: 'files(id,name,parents)' },
+      headers: { Authorization: `Bearer ${DRIVE_TOKEN}` }
+    });
+    const existing = (findResp.data?.files || [])[0];
+    if (existing) return res.json({ ok: true, id: existing.id, name: existing.name, existed: true });
+
+    // Create folder
+    const metadata = { name, mimeType: 'application/vnd.google-apps.folder' };
+    if (parentId) metadata.parents = [parentId];
+    const createResp = await axios.post('https://www.googleapis.com/drive/v3/files', metadata, {
+      headers: { Authorization: `Bearer ${DRIVE_TOKEN}` }
+    });
+    const f = createResp.data || {};
+    res.json({ ok: true, id: f.id, name: f.name, existed: false });
+  } catch (e) {
+    const msg = e.response?.data || e.message || String(e);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// List contents of a Drive folder (non-trashed files). Accepts folderId, optional limit
+app.get('/drive/folder_contents', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const { folderId, limit } = req.query || {};
+    if (!folderId) return res.status(400).json({ error: 'missing folderId' });
+    const MAX_FILES = Math.max(1, Math.min(Number(limit) || 500, 2000));
+
+    const files = [];
+    let pageToken = undefined;
+    let fetched = 0;
+    const baseParams = {
+      fields: 'nextPageToken, files(id,name,size,mimeType,md5Checksum,trashed)'
+    };
+    const q = `'${folderId}' in parents and trashed=false`;
+    while (fetched < MAX_FILES) {
+      const params = { ...baseParams, q, pageToken, pageSize: 200 };
+      const r = await axios.get('https://www.googleapis.com/drive/v3/files', {
+        params,
+        headers: { Authorization: `Bearer ${DRIVE_TOKEN}` }
+      });
+      const batch = r.data?.files || [];
+      for (const f of batch) {
+        files.push({ id: f.id, name: f.name, size: Number(f.size || 0), mimeType: f.mimeType });
+        fetched += 1;
+        if (fetched >= MAX_FILES) break;
+      }
+      pageToken = r.data?.nextPageToken;
+      if (!pageToken || fetched >= MAX_FILES) break;
+    }
+
+    res.json({ folderId, files });
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
 });
 
 app.post('/embed', async (req, res) => {
@@ -64,21 +139,22 @@ app.post('/approve', async (req, res) => {
 });
 
 app.get('/duplicates', async (req, res) => {
-  try { const r = await axios.get(`${PARSER}/duplicates`); res.json(r.data); }
+  try { const r = await axios.get(`${DEDUP}/duplicates`); res.json(r.data); }
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
 // Refresh duplicates: run a scan first (to sync DB with drive changes), then fetch duplicates
 app.post('/duplicates/refresh', async (req, res) => {
   try {
+    // Optionally rescan local files so DB is up to date
     try { await axios.post(`${PARSER}/scan_folder`); } catch (_) { /* non-fatal */ }
-    const r = await axios.get(`${PARSER}/duplicates`);
+    const r = await axios.get(`${DEDUP}/duplicates`);
     res.json(r.data);
   } catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
 app.post('/resolve_duplicate', async (req, res) => {
-  try { const r = await axios.post(`${PARSER}/resolve_duplicate`, req.body); res.json(r.data); }
+  try { const r = await axios.post(`${DEDUP}/resolve_duplicate`, req.body); res.json(r.data); }
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
@@ -114,6 +190,21 @@ app.post('/drive/exchange_code', async (req, res) => {
   }
 });
 
+// Keep a Drive file: no Drive mutation, only remove from current proposals cache
+app.post('/drive/keep', async (req, res) => {
+  try {
+    const id = req.body?.id;
+    if (!id) return res.status(400).json({ error: 'missing id' });
+    // Remove from proposals cache so it won't show in duplicates derived from proposals
+    const before = DRIVE_PROPOSALS.length;
+    DRIVE_PROPOSALS = (DRIVE_PROPOSALS || []).filter(f => f.id !== id);
+    const after = DRIVE_PROPOSALS.length;
+    res.json({ ok: true, removedFromCache: before - after, id });
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
 // Organize files in Drive using parser
 app.post('/drive/organize', async (req, res) => {
   try {
@@ -136,31 +227,44 @@ app.get('/drive/proposals', async (req, res) => {
 // Drive categories (mirror categories with Drive-specific counts)
 app.get('/drive/categories', async (req, res) => {
   try {
-    let categories = [];
-    try {
-      const r = await axios.get(`${PARSER}/categories`);
-      categories = Array.isArray(r.data) ? r.data : [];
-    } catch (_) {
-      // ignore parser error; will fallback to proposals below
-      categories = [];
-    }
+    if (!DRIVE_TOKEN) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
 
-    // If parser didn't provide categories, derive from current DRIVE_PROPOSALS
-    if (!categories.length) {
-      const set = new Set();
-      for (const f of DRIVE_PROPOSALS) {
-        set.add(f.proposed_category || 'Other');
-      }
-      categories = Array.from(set);
-    }
-
-    const driveCounts = {};
-    for (const f of DRIVE_PROPOSALS) {
+    // 1) Build counts from current proposals by proposed_category
+    const proposalCounts = {};
+    for (const f of (DRIVE_PROPOSALS || [])) {
       const k = f.proposed_category || 'Other';
-      driveCounts[k] = (driveCounts[k] || 0) + 1;
+      proposalCounts[k] = (proposalCounts[k] || 0) + 1;
     }
 
-    const out = categories.map(name => ({ name, drive_file_count: driveCounts[name] || 0 }));
+    // 2) List folders from Drive
+    const folders = [];
+    let pageToken = undefined;
+    do {
+      const r = await axios.get('https://www.googleapis.com/drive/v3/files', {
+        params: {
+          q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
+          fields: 'nextPageToken, files(id,name)'
+        },
+        headers: { Authorization: `Bearer ${DRIVE_TOKEN}` }
+      });
+      folders.push(...(r.data?.files || []));
+      pageToken = r.data?.nextPageToken;
+    } while (pageToken);
+
+    // 3) Map folders to category counts by name
+    const out = folders.map(f => ({
+      name: f.name,
+      folder_id: f.id,
+      drive_file_count: proposalCounts[f.name] || 0
+    }));
+
+    // 4) Include proposed categories without a matching folder
+    for (const name of Object.keys(proposalCounts)) {
+      if (!out.some(x => x.name === name)) {
+        out.push({ name, folder_id: null, drive_file_count: proposalCounts[name], missing_folder: true });
+      }
+    }
+
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.toString() }); }
 });
@@ -177,21 +281,150 @@ app.get('/drive/health', (req, res) => {
   res.json({ proposals: DRIVE_PROPOSALS.length, hasToken: !!DRIVE_TOKEN });
 });
 
+// Drive duplicates based on file metadata (md5Checksum preferred; fallback name+size)
+app.get('/drive/duplicates', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+
+    const { folderId, limit } = req.query || {};
+    const MAX_FILES = Math.max(1, Math.min(Number(limit) || 300, 2000));
+
+    // Helper: group files by content hash or fallback key
+    const groupFiles = (files) => {
+      const groups = {};
+      for (const m of files) {
+        if (!m || m.trashed) continue;
+        let key;
+        if (m.mimeType === 'application/vnd.google-apps.folder') {
+          // Group folders strictly by name (optionally this could include parent id for stricter grouping)
+          key = `folder:${m.name || ''}`;
+        } else if (m.md5Checksum) {
+          key = `md5:${m.md5Checksum}`;
+        } else if (m.size) {
+          key = `ns:${m.name || ''}:${m.size}`;
+        } else {
+          // Some Google-native files may not have size; fall back to name-only
+          key = `n:${m.name || ''}`;
+        }
+        if (!groups[key]) groups[key] = [];
+        groups[key].push({ id: m.id, name: m.name, size: Number(m.size || 0) });
+      }
+      const out = [];
+      let gi = 1;
+      for (const files of Object.values(groups)) {
+        if (files.length >= 2) out.push({ group_id: `group_${gi++}`, file_count: files.length, files });
+      }
+      return out;
+    };
+
+    // Case 1: Use current proposals (fast path)
+    const proposalIds = (DRIVE_PROPOSALS || []).map(f => f.id).filter(Boolean);
+    if (proposalIds.length) {
+      const metas = [];
+      for (const id of proposalIds) {
+        try {
+          const r = await axios.get(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`, {
+            params: { fields: 'id,name,size,md5Checksum,trashed,mimeType' },
+            headers: { Authorization: `Bearer ${DRIVE_TOKEN}` }
+          });
+          metas.push(r.data || {});
+        } catch (_) { /* skip */ }
+      }
+      const dupGroups = groupFiles(metas);
+      return res.json({ summary: { duplicate_groups_found: dupGroups.length, total_files_processed: metas.length }, duplicates: dupGroups });
+    }
+
+    // Case 2: No proposals – list files from Drive (optionally folder)
+    const files = [];
+    let pageToken = undefined;
+    let fetched = 0;
+    const baseParams = {
+      fields: 'nextPageToken, files(id,name,size,md5Checksum,trashed,mimeType)',
+      pageSize: 200,
+      orderBy: 'modifiedTime desc'
+    };
+    const qParts = ["trashed=false", "mimeType!='application/vnd.google-apps.folder'"];
+    if (folderId) qParts.push(`'${folderId}' in parents`);
+    const q = qParts.join(' and ');
+
+    while (fetched < MAX_FILES) {
+      const params = { ...baseParams, q, pageToken };
+      const r = await axios.get('https://www.googleapis.com/drive/v3/files', {
+        params,
+        headers: { Authorization: `Bearer ${DRIVE_TOKEN}` }
+      });
+      const batch = (r.data?.files || []);
+      for (const f of batch) {
+        files.push(f);
+        fetched += 1;
+        if (fetched >= MAX_FILES) break;
+      }
+      pageToken = r.data?.nextPageToken;
+      if (!pageToken || fetched >= MAX_FILES) break;
+    }
+
+    const dupGroups = groupFiles(files);
+    res.json({ summary: { duplicate_groups_found: dupGroups.length, total_files_processed: files.length }, duplicates: dupGroups });
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
+// Delete a Drive file by ID
+app.post('/drive/delete', async (req, res) => {
+  try {
+    const id = req.body?.id;
+    if (!id) return res.status(400).json({ error: 'missing id' });
+    if (!DRIVE_TOKEN) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+
+    await axios.delete(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${DRIVE_TOKEN}` }
+    });
+
+    // Also drop from current proposals cache if present
+    DRIVE_PROPOSALS = (DRIVE_PROPOSALS || []).filter(f => f.id !== id);
+    res.json({ ok: true, id });
+  } catch (e) {
+    const msg = e.response?.data || e.message || String(e);
+    res.status(500).json({ error: msg });
+  }
+});
+
 app.get('/categories', async (req, res) => {
   try {
-    const r = await axios.get(`${PARSER}/categories`);
-    const categories = r.data || [];
+    const r = await axios.get(`${PARSER}/categories`).catch(() => ({ data: [] }));
+    const raw = Array.isArray(r.data) ? r.data : [];
+    // Normalize to array of names (strings)
+    let categories = [];
+    if (raw.length && typeof raw[0] === 'string') {
+      categories = raw;
+    } else if (raw.length && typeof raw[0] === 'object' && raw[0] !== null) {
+      categories = raw.map(x => x.name).filter(Boolean);
+    }
     const localCounts = {};
     const driveCounts = {};
-    for (const f of await axios.get(`${PARSER}/list_proposals`)) {
-      const k = f.proposed_category || 'Other';
-      localCounts[k] = (localCounts[k] || 0) + 1;
-    }
+    try {
+      const listResp = await axios.get(`${PARSER}/list_proposals`);
+      const list = Array.isArray(listResp.data) ? listResp.data : [];
+      for (const f of list) {
+        const k = f.proposed_category || 'Other';
+        localCounts[k] = (localCounts[k] || 0) + 1;
+      }
+    } catch (_) { /* ignore */ }
     for (const f of DRIVE_PROPOSALS) {
       const k = f.proposed_category || 'Other';
       driveCounts[k] = (driveCounts[k] || 0) + 1;
     }
-    const out = categories.filter(name => localCounts[name] > 0 || driveCounts[name] > 0).map(name => ({ name, local_file_count: localCounts[name] || 0, drive_file_count: driveCounts[name] || 0 }));
+    // If parser returned nothing, derive categories from Drive proposals
+    if (!categories.length) {
+      const set = new Set();
+      for (const f of DRIVE_PROPOSALS) set.add(f.proposed_category || 'Other');
+      categories = Array.from(set);
+    }
+
+    const out = categories
+      .filter(name => (localCounts[name] || 0) > 0 || (driveCounts[name] || 0) > 0)
+      .map(name => ({ name, local_file_count: localCounts[name] || 0, drive_file_count: driveCounts[name] || 0 }));
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.toString() }); }
 });
@@ -274,6 +507,8 @@ const builtUi = path.join(__dirname, '../ui/dist');
 const legacyUi = path.join(__dirname, '../ui');
 try {
   app.use(express.static(builtUi));
+  // Also try to serve fallback assets from legacy ui for missing files like index.css
+  app.use(express.static(legacyUi));
   app.get('*', (req, res, next) => {
     res.sendFile(path.join(builtUi, 'index.html'), (err) => {
       if (err) next();
