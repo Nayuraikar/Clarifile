@@ -73,6 +73,11 @@ app.post('/resolve_duplicate', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
+app.post('/keep', async (req, res) => {
+  try { const r = await axios.post(`${DEDUP}/keep`, req.body); res.json(r.data); }
+  catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
 // ====== DRIVE ENDPOINTS ======
 
 // Exchange auth code from extension for access token
@@ -131,15 +136,23 @@ app.get('/drive/health', (req, res) => {
   res.json({ proposals: DRIVE_PROPOSALS.length, hasToken: !!DRIVE_TOKEN });
 });
 
-app.get('/drive/categories', (req, res) => {
-  const counts = {};
-  for (const f of DRIVE_PROPOSALS) {
-    const k = f.proposed_category || 'Other';
-    counts[k] = (counts[k] || 0) + 1;
-  }
-  const out = Object.keys(counts).map(name => ({ name, file_count: counts[name] }))
-    .sort((a,b) => b.file_count - a.file_count);
-  res.json(out);
+app.get('/categories', async (req, res) => {
+  try {
+    const r = await axios.get(`${PARSER}/categories`);
+    const categories = r.data || [];
+    const localCounts = {};
+    const driveCounts = {};
+    for (const f of await axios.get(`${PARSER}/list_proposals`)) {
+      const k = f.proposed_category || 'Other';
+      localCounts[k] = (localCounts[k] || 0) + 1;
+    }
+    for (const f of DRIVE_PROPOSALS) {
+      const k = f.proposed_category || 'Other';
+      driveCounts[k] = (driveCounts[k] || 0) + 1;
+    }
+    const out = categories.filter(name => localCounts[name] > 0 || driveCounts[name] > 0).map(name => ({ name, local_file_count: localCounts[name] || 0, drive_file_count: driveCounts[name] || 0 }));
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
 app.post('/drive/approve', async (req, res) => {
@@ -168,6 +181,36 @@ app.post('/drive/analyze', async (req, res) => {
     if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
     const body = { ...req.body, auth_token: req.body?.auth_token || DRIVE_TOKEN };
     const r = await axios.post(`${PARSER}/drive_analyze`, body);
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Summarize files in Drive
+app.post('/drive/summarize', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const body = { ...req.body, auth_token: req.body?.auth_token || DRIVE_TOKEN };
+    const r = await axios.post(`${PARSER}/drive_summarize`, body);
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Find similar files in Drive
+app.post('/drive/find_similar', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const body = { ...req.body, auth_token: req.body?.auth_token || DRIVE_TOKEN };
+    const r = await axios.post(`${PARSER}/drive_find_similar`, body);
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Extract insights from files in Drive
+app.post('/drive/extract_insights', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const body = { ...req.body, auth_token: req.body?.auth_token || DRIVE_TOKEN };
+    const r = await axios.post(`${PARSER}/drive_extract_insights`, body);
     res.json(r.data);
   } catch (e) { res.status(500).json({ error: e.toString() }); }
 });

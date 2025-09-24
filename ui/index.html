@@ -1,13 +1,250 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Clarifile</title>
-  </head>
-  <body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clarifile - Document Intelligence Platform</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-  </html>
-
+    
+    <!-- Interactive JavaScript for Professional Theme -->
+    <script>
+        // Professional Particle System
+        class ProfessionalParticleSystem {
+            constructor() {
+                this.particles = [];
+                this.container = document.getElementById('professional-particles');
+                if (!this.container) return;
+                
+                this.init();
+                this.animate();
+            }
+            
+            init() {
+                const particleCount = 50;
+                const symbols = ['📄', '📁', '📋', '📑', '📊', '📈', '📉', '📇', '📃', '🗂️', '📂', '🗃️', '🗄️', '🗑️', '📎', '📌', '📝'];
+                
+                for (let i = 0; i < particleCount; i++) {
+                    const particle = document.createElement('div');
+                    particle.className = 'professional-particle';
+                    particle.innerHTML = symbols[Math.floor(Math.random() * symbols.length)];
+                    particle.style.left = Math.random() * 100 + '%';
+                    particle.style.top = Math.random() * 100 + '%';
+                    particle.style.animationDelay = Math.random() * 20 + 's';
+                    particle.style.animationDuration = (15 + Math.random() * 10) + 's';
+                    
+                    this.container.appendChild(particle);
+                    this.particles.push(particle);
+                }
+            }
+            
+            animate() {
+                this.particles.forEach((particle, index) => {
+                    const duration = 15000 + Math.random() * 10000;
+                    const delay = index * 200;
+                    
+                    setTimeout(() => {
+                        particle.style.animation = `float-particle ${duration}ms infinite ease-in-out`;
+                    }, delay);
+                });
+            }
+        }
+        
+        // Professional Mouse Trail System
+        class ProfessionalMouseTrail {
+            constructor() {
+                this.trail = document.getElementById('professional-mouse-trail');
+                if (!this.trail) return;
+                
+                this.points = [];
+                this.maxPoints = 20;
+                this.mouseX = 0;
+                this.mouseY = 0;
+                
+                this.init();
+            }
+            
+            init() {
+                document.addEventListener('mousemove', (e) => {
+                    this.mouseX = e.clientX;
+                    this.mouseY = e.clientY;
+                    this.addPoint();
+                });
+                
+                this.animate();
+            }
+            
+            addPoint() {
+                const point = document.createElement('div');
+                point.className = 'professional-trail-point';
+                point.style.left = this.mouseX + 'px';
+                point.style.top = this.mouseY + 'px';
+                
+                this.trail.appendChild(point);
+                this.points.push(point);
+                
+                if (this.points.length > this.maxPoints) {
+                    const oldPoint = this.points.shift();
+                    if (oldPoint && oldPoint.parentNode) {
+                        oldPoint.parentNode.removeChild(oldPoint);
+                    }
+                }
+                
+                // Animate the point
+                setTimeout(() => {
+                    point.style.opacity = '0';
+                    point.style.transform = 'scale(0)';
+                }, 50);
+                
+                setTimeout(() => {
+                    if (point.parentNode) {
+                        point.parentNode.removeChild(point);
+                    }
+                }, 1000);
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+            }
+        }
+        
+        // Professional Interactive Elements
+        class ProfessionalInteractions {
+            constructor() {
+                this.init();
+            }
+            
+            init() {
+                this.addInteractiveListeners();
+                this.addScrollEffects();
+                this.addHoverEffects();
+            }
+            
+            addInteractiveListeners() {
+                // Add click effects to interactive elements
+                document.addEventListener('click', (e) => {
+                    if (e.target.closest('.professional-interactive')) {
+                        this.createRipple(e.clientX, e.clientY);
+                    }
+                });
+                
+                // Add parallax effect to shapes
+                document.addEventListener('mousemove', (e) => {
+                    const shapes = document.querySelectorAll('.professional-shape');
+                    const mouseX = e.clientX / window.innerWidth;
+                    const mouseY = e.clientY / window.innerHeight;
+                    
+                    shapes.forEach((shape, index) => {
+                        const speed = (index + 1) * 0.5;
+                        const x = (mouseX - 0.5) * speed * 50;
+                        const y = (mouseY - 0.5) * speed * 50;
+                        shape.style.transform = `translate(${x}px, ${y}px)`;
+                    });
+                });
+            }
+            
+            addScrollEffects() {
+                const observerOptions = {
+                    threshold: 0.1,
+                    rootMargin: '0px 0px -50px 0px'
+                };
+                
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            entry.target.style.opacity = '1';
+                            entry.target.style.transform = 'translateY(0)';
+                        }
+                    });
+                }, observerOptions);
+                
+                document.querySelectorAll('.fade-in').forEach(el => {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(30px)';
+                    el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+                    observer.observe(el);
+                });
+            }
+            
+            addHoverEffects() {
+                const interactiveElements = document.querySelectorAll('.professional-interactive');
+                
+                interactiveElements.forEach(element => {
+                    element.addEventListener('mouseenter', (e) => {
+                        this.createHoverEffect(e.target);
+                    });
+                    
+                    element.addEventListener('mouseleave', (e) => {
+                        this.removeHoverEffect(e.target);
+                    });
+                });
+            }
+            
+            createRipple(x, y) {
+                const ripple = document.createElement('div');
+                ripple.className = 'professional-ripple';
+                ripple.style.left = x + 'px';
+                ripple.style.top = y + 'px';
+                
+                document.body.appendChild(ripple);
+                
+                setTimeout(() => {
+                    ripple.style.transform = 'scale(4)';
+                    ripple.style.opacity = '0';
+                }, 50);
+                
+                setTimeout(() => {
+                    if (ripple.parentNode) {
+                        ripple.parentNode.removeChild(ripple);
+                    }
+                }, 600);
+            }
+            
+            createHoverEffect(element) {
+                element.style.transform = 'translateY(-5px)';
+                element.style.boxShadow = '0 20px 40px rgba(139, 69, 19, 0.2)';
+            }
+            
+            removeHoverEffect(element) {
+                element.style.transform = 'translateY(0)';
+                element.style.boxShadow = '0 10px 30px rgba(139, 69, 19, 0.1)';
+            }
+        }
+        
+        // Initialize all professional interactive systems
+        document.addEventListener('DOMContentLoaded', () => {
+            new ProfessionalParticleSystem();
+            new ProfessionalMouseTrail();
+            new ProfessionalInteractions();
+        });
+        
+        // Add smooth scrolling for navigation
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('a[href^="#"]')) {
+                e.preventDefault();
+                const target = document.querySelector(e.target.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }
+            }
+        });
+        
+        // Add loading animation for page transitions
+        window.addEventListener('load', () => {
+            document.body.style.opacity = '0';
+            document.body.style.transition = 'opacity 0.5s ease';
+            
+            setTimeout(() => {
+                document.body.style.opacity = '1';
+            }, 100);
+        });
+    </script>
+    
+    <script src="/src/main.tsx" type="module"></script>
+</body>
+</html>

@@ -824,6 +824,33 @@ def categories():
     rows = cur.fetchall()
     return [{"name": r[0], "file_count": r[1]} for r in rows]
 
+@app.get("/categories_with_files")
+def categories_with_files():
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT final_label, COUNT(*) AS file_count
+        FROM files
+        WHERE final_label IS NOT NULL AND final_label != ''
+        GROUP BY final_label
+        ORDER BY file_count DESC
+    """)
+    rows = cur.fetchall()
+    categories = []
+    for row in rows:
+        category_name = row[0]
+        file_count = row[1]
+        cur.execute("""
+            SELECT id, file_name, file_path, proposed_label, final_label 
+            FROM files 
+            WHERE final_label = ?
+        """, (category_name,))
+        files = cur.fetchall()
+        categories.append({
+            "name": category_name,
+            "file_count": file_count,
+            "files": [{"id": f[0], "file": f[1], "proposed": f[3], "final": f[4]} for f in files]
+        })
+    return categories
 
 @app.get("/file_summary")
 def file_summary(file_id: int):
@@ -1051,6 +1078,52 @@ def organize_drive_files_info():
         }
     }
 
+@app.post("/drive_summarize")
+def drive_summarize(file_id: str, auth_token: str):
+    drive_service = get_drive_service(auth_token)
+    file_path = drive_download_file(auth_token, file_id, tempfile.gettempdir())
+    if not file_path:
+        raise HTTPException(status_code=400, detail="Failed to download file from Drive")
+    try:
+        summary = summarize_text(read_text_file(file_path))
+        return {"summary": summary}
+    finally:
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+
+@app.post("/drive_find_similar")
+def drive_find_similar(file_id: str, auth_token: str):
+    drive_service = get_drive_service(auth_token)
+    file_path = drive_download_file(auth_token, file_id, tempfile.gettempdir())
+    if not file_path:
+        raise HTTPException(status_code=400, detail="Failed to download file from Drive")
+    try:
+        similar_files = []
+        # TO DO: implement similar file search logic
+        return {"similar_files": similar_files}
+    finally:
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+
+@app.post("/drive_extract_insights")
+def drive_extract_insights(file_id: str, auth_token: str):
+    drive_service = get_drive_service(auth_token)
+    file_path = drive_download_file(auth_token, file_id, tempfile.gettempdir())
+    if not file_path:
+        raise HTTPException(status_code=400, detail="Failed to download file from Drive")
+    try:
+        insights = []
+        # TO DO: implement insight extraction logic
+        return {"insights": insights}
+    finally:
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
 
 @app.get("/favicon.ico")
 def favicon():
