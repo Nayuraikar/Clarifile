@@ -12,15 +12,15 @@ app.use(cors());
 const PARSER = 'http://127.0.0.1:8000';
 const EMBED = 'http://127.0.0.1:8002';
 const INDEXER = 'http://127.0.0.1:8003';
-const DEDUP = 'http://127.0.0.1:8004';
+// Duplicates are now handled by the parser directly
 
 let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = '1085724686418-fgvn7on50g4dmq2la1q84dflt66at0mo.apps.googleusercontent.com'; 
-const CLIENT_SECRET = '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';                         
-const REDIRECT_URI = 'https://aanmbhbgdehmchcjbiblopfkdcpejpkh.chromiumapp.org/';      
+const CLIENT_ID = '36164233493-v3k62o8s731gidnl6j9il8n3otam0gsm.apps.googleusercontent.com'; 
+const CLIENT_SECRET = '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';                         
+const REDIRECT_URI = 'https://edhenpbomahoffphfnidddbhfaddcmoj.chromiumapp.org/';      
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
@@ -64,17 +64,26 @@ app.post('/approve', async (req, res) => {
 });
 
 app.get('/duplicates', async (req, res) => {
-  try { const params = { params: req.query }; const r = await axios.get(`${DEDUP}/duplicates`, params); res.json(r.data); }
+  try { const r = await axios.get(`${PARSER}/duplicates`); res.json(r.data); }
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
+// Refresh duplicates: run a scan first (to sync DB with drive changes), then fetch duplicates
+app.post('/duplicates/refresh', async (req, res) => {
+  try {
+    try { await axios.post(`${PARSER}/scan_folder`); } catch (_) { /* non-fatal */ }
+    const r = await axios.get(`${PARSER}/duplicates`);
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
 app.post('/resolve_duplicate', async (req, res) => {
-  try { const r = await axios.post(`${DEDUP}/resolve_duplicate`, req.body); res.json(r.data); }
+  try { const r = await axios.post(`${PARSER}/resolve_duplicate`, req.body); res.json(r.data); }
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
 app.post('/keep', async (req, res) => {
-  try { const r = await axios.post(`${DEDUP}/keep`, req.body); res.json(r.data); }
+  try { const r = await axios.post(`${PARSER}/keep`, req.body); res.json(r.data); }
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
@@ -122,6 +131,38 @@ app.post('/drive/organize', async (req, res) => {
 
 app.get('/drive/proposals', async (req, res) => {
   try { res.json(DRIVE_PROPOSALS); } catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Drive categories (mirror categories with Drive-specific counts)
+app.get('/drive/categories', async (req, res) => {
+  try {
+    let categories = [];
+    try {
+      const r = await axios.get(`${PARSER}/categories`);
+      categories = Array.isArray(r.data) ? r.data : [];
+    } catch (_) {
+      // ignore parser error; will fallback to proposals below
+      categories = [];
+    }
+
+    // If parser didn't provide categories, derive from current DRIVE_PROPOSALS
+    if (!categories.length) {
+      const set = new Set();
+      for (const f of DRIVE_PROPOSALS) {
+        set.add(f.proposed_category || 'Other');
+      }
+      categories = Array.from(set);
+    }
+
+    const driveCounts = {};
+    for (const f of DRIVE_PROPOSALS) {
+      const k = f.proposed_category || 'Other';
+      driveCounts[k] = (driveCounts[k] || 0) + 1;
+    }
+
+    const out = categories.map(name => ({ name, drive_file_count: driveCounts[name] || 0 }));
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
 app.post('/drive/proposals_ingest', async (req, res) => {

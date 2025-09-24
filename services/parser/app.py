@@ -342,7 +342,7 @@ async def startup_event():
     global conn
     try:
         print("Initializing database connection...")
-        conn = init_db()
+conn = init_db()
         print("✅ Database connection initialized successfully")
     except Exception as e:
         print(f"❌ Failed to initialize database: {e}")
@@ -622,9 +622,9 @@ def scan_folder():
                 cur = conn.cursor()
                 try:
                     cur.execute("""INSERT OR IGNORE INTO files
-                                   (file_path,file_name,file_hash,size,status,proposed_label)
-                                   VALUES (?,?,?,?,?,?)""",
-                                (path, fname, fh, size, "new", "Uncategorized"))
+                                       (file_path,file_name,file_hash,size,status,proposed_label)
+                                       VALUES (?,?,?,?,?,?)""",
+                                    (path, fname, fh, size, "new", "Uncategorized"))
                     conn.commit()
                     print(f"File record inserted/exists for {fname}")
                 except Exception as db_error:
@@ -798,14 +798,14 @@ def list_proposals():
 
 
 @app.post("/approve")
-def approve(request: ApproveRequest):
+def approve(file_id: int, final_label: str):
     try:
-        cur = conn.cursor()
-        cur.execute("UPDATE files SET final_label=? WHERE id=?", (request.final_label, request.file_id))
-        conn.commit()
-        return {"status": "approved", "file_id": request.file_id, "final_label": request.final_label}
+    cur = conn.cursor()
+    cur.execute("UPDATE files SET final_label=? WHERE id=?", (final_label, file_id))
+    conn.commit()
+    return {"status": "approved", "file_id": file_id, "final_label": final_label}
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/categories")
 def categories():
@@ -943,8 +943,8 @@ def ask(file_id: int = Query(...), q: str = Query(...)):
     # If we already have text content, use it
     if full_text and full_text.strip():
         print(f"Using pre-extracted text for {file_name} ({len(full_text)} chars)")
-        ans = nlp.best_answer(q, full_text)
-        return {"ok": True, "answer": ans.get("answer", ""), "score": ans.get("score", 0), "context": ans.get("context", "")}
+    ans = nlp.best_answer(q, full_text)
+    return {"ok": True, "answer": ans.get("answer", ""), "score": ans.get("score", 0), "context": ans.get("context", "")}
     
     # If no text content, try to extract it in real-time
     if not file_path or not os.path.exists(file_path):
@@ -1010,11 +1010,98 @@ def reindex():
 
 @app.get("/duplicates")
 def duplicates():
+    """
+    Detect duplicate files stored locally by exact content hash (byte-for-byte).
+    Returns groups with at least 2 files.
+    """
     try:
-        r = requests.get("http://127.0.0.1:8004/duplicates", timeout=5)
-        return r.json()
-    except:
-        return {"duplicates": [], "message": "Dedup service not available"}
+        c = conn.cursor()
+        c.execute("SELECT id, file_path, file_name FROM files WHERE file_path IS NOT NULL")
+        rows = c.fetchall()
+        if not rows:
+            return {"summary": {"duplicate_groups_found": 0, "total_files_processed": 0}, "duplicates": []}
+
+        import hashlib, os
+        def hash_file(path: str) -> str:
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+
+        hash_to_files = {}
+        total_existing = 0
+        for fid, fpath, fname in rows:
+            if not fpath:
+                continue
+            npath = os.path.normcase(os.path.abspath(fpath))
+            if not os.path.exists(npath):
+                continue
+            total_existing += 1
+            try:
+                fh = hash_file(npath)
+            except Exception:
+                continue
+            lst = hash_to_files.setdefault(fh, [])
+            if not any(x["path"] == npath for x in lst):
+                lst.append({"id": fid, "name": fname or os.path.basename(npath), "path": npath})
+
+        groups = []
+        gnum = 1
+        for hval, files in hash_to_files.items():
+            if len(files) >= 2:
+                files_sorted = sorted(files, key=lambda f: (f["name"].lower(), f["path"].lower()))
+                groups.append({
+                    "group_id": f"group_{gnum}",
+                    "file_count": len(files_sorted),
+                    "files": files_sorted
+                })
+                gnum += 1
+
+        return {
+            "summary": {"duplicate_groups_found": len(groups), "total_files_processed": total_existing},
+            "duplicates": groups
+        }
+    except Exception as e:
+        return {"error": str(e), "summary": {"duplicate_groups_found": 0, "total_files_processed": 0}, "duplicates": []}
+
+@app.post("/resolve_duplicate")
+def resolve_duplicate(file_a: int, file_b: int, action: str):
+    """
+    Keep one, delete the other from disk, and update statuses.
+    action: 'keep_a' or 'keep_b'
+    """
+    if action not in ("keep_a", "keep_b"):
+        raise HTTPException(status_code=400, detail="action must be keep_a or keep_b")
+    cur = conn.cursor()
+    cur.execute("SELECT id, file_path, file_name FROM files WHERE id IN (?, ?)", (file_a, file_b))
+    rows = cur.fetchall()
+    if len(rows) != 2:
+        raise HTTPException(status_code=404, detail="One or both files not found")
+    m = {r[0]: {"id": r[0], "path": r[1], "name": r[2]} for r in rows}
+    a, b = m[file_a], m[file_b]
+    import os
+    a_path = os.path.normcase(os.path.abspath(a["path"])) if a.get("path") else None
+    b_path = os.path.normcase(os.path.abspath(b["path"])) if b.get("path") else None
+    try:
+        if action == "keep_a":
+            if b_path and os.path.exists(b_path):
+                try: os.remove(b_path)
+                except Exception: pass
+            cur.execute("UPDATE files SET status=? WHERE id=?", ("removed_duplicate", file_b))
+            cur.execute("UPDATE files SET status=? WHERE id=?", ("approved", file_a))
+            conn.commit()
+            return {"status": "resolved", "kept": a, "deleted": b_path}
+        else:
+            if a_path and os.path.exists(a_path):
+                try: os.remove(a_path)
+                except Exception: pass
+            cur.execute("UPDATE files SET status=? WHERE id=?", ("removed_duplicate", file_a))
+            cur.execute("UPDATE files SET status=? WHERE id=?", ("approved", file_b))
+            conn.commit()
+            return {"status": "resolved", "kept": b, "deleted": a_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Google Drive integration ---
