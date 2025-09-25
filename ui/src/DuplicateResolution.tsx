@@ -84,44 +84,56 @@ const DuplicateResolution: React.FC<DuplicateResolutionProps> = ({
   };
 
   return (
-    <div className="professional-card professional-interactive fade-in" style={{animationDelay: `${groupIndex * 0.1}s`}}>
-      <div className="card-heading mb-4">Duplicate Group {groupIndex + 1}</div>
-      <div className="text-sm text-text-muted mb-4">
-        {group.file_count} files with identical content
+    <div className="duplicate-group-card fade-in" style={{animationDelay: `${groupIndex * 0.1}s`}}>
+      <div className="duplicate-group-header">
+        <div className="duplicate-group-title">🔄 Duplicate Group {groupIndex + 1}</div>
+        <div className="duplicate-group-count">
+          {group.file_count}
+        </div>
+      </div>
+      <div className="duplicate-group-subtitle">
+        
       </div>
       
-      <div className="space-y-3">
-        {group.files.map((file: File) => (
-          <div key={file.id} className="flex items-center justify-between p-4 bg-bg-secondary rounded-xl">
-            <div className="flex items-center gap-3">
-              <div>
-                <div className="font-medium text-text-primary">{file.name}</div>
-                <div className="text-sm text-text-muted">
+      <div className="duplicate-files-list">
+        {group.files.map((file: File, fileIndex) => (
+          <div key={file.id} className="duplicate-file-item" style={{animationDelay: `${(groupIndex * 0.1) + (fileIndex * 0.05)}s`}}>
+            <div className="duplicate-file-info">
+              <div className="duplicate-file-icon">
+                📄
+              </div>
+              <div className="duplicate-file-details">
+                <div className="duplicate-file-name">{file.name}</div>
+                <div className="duplicate-file-size">
                   {file.size ? `${file.size} bytes` : 'Size unknown'}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="duplicate-actions">
               <button
                 onClick={() => handleKeep(file)}
                 disabled={duplicateResolutionLoading}
-                className="px-3 py-2 text-sm font-medium text-text-primary bg-bg-secondary border border-text-muted rounded-lg hover:bg-bg-tertiary disabled:opacity-50"
+                className="duplicate-action-button keep"
               >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
                 Keep
               </button>
               <button
                 onClick={() => handleDelete(file)}
                 disabled={duplicateResolutionLoading}
-                className="px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:opacity-90 disabled:opacity-50"
+                className="duplicate-action-button delete"
               >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
                 Delete
               </button>
             </div>
           </div>
         ))}
       </div>
-      
-      <div className="mt-6 flex justify-end gap-3"/>
     </div>
   );
 };

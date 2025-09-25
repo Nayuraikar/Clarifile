@@ -42,7 +42,7 @@ def _hash_bytes(data: bytes) -> str:
 
 def _hash_file_stream(filepath: str) -> str:
     h = hashlib.new(HASH_ALGO)
-        with open(filepath, "rb") as f:
+    with open(filepath, "rb") as f:
         while True:
             chunk = f.read(STREAM_CHUNK_SIZE)
             if not chunk:
@@ -73,7 +73,7 @@ def compute_exact_content_hash(filepath: str) -> Optional[str]:
             
         # Plain text files: hash raw bytes (exact content)
         if ext in TEXT_EXTENSIONS:
-        with open(filepath, "rb") as f:
+            with open(filepath, "rb") as f:
                 data = f.read()
             return _hash_bytes(data) if data else "empty_file_hash"
 
@@ -106,7 +106,7 @@ def find_duplicates():
     """
     try:
         with get_db_connection() as conn:
-    cur = conn.cursor()
+            cur = conn.cursor()
             # Adjust column names/table if yours differ
             cur.execute("SELECT id, file_path, file_name FROM files WHERE file_path IS NOT NULL")
         rows = cur.fetchall()
@@ -216,7 +216,7 @@ def resolve_duplicate(payload: Dict[str, Any]):
                 conn.commit()
                 return {"status": "resolved", "kept": a, "deleted": b_path}
 
-            if action == "keep_b":
+        if action == "keep_b":
                 if a_path and os.path.exists(a_path):
                     try:
                         os.remove(a_path)
@@ -225,9 +225,9 @@ def resolve_duplicate(payload: Dict[str, Any]):
                 cur.execute("UPDATE files SET status=? WHERE id=?", ("removed_duplicate", file_a))
                 cur.execute("UPDATE files SET status=? WHERE id=?", ("approved", file_b))
         conn.commit()
-                return {"status": "resolved", "kept": b, "deleted": a_path}
+        return {"status": "resolved", "kept": b, "deleted": a_path}
         
-            return {"error": "Unsupported action"}
+        return {"error": "Unsupported action"}
     except Exception as e:
         logger.exception("Error resolving duplicate")
         return {"error": str(e)}

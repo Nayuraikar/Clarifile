@@ -400,6 +400,11 @@ export default function App() {
         <div className="professional-wave"></div>
       </div>
       
+      {/* Beautiful Floating Orbs */}
+      <div className="beautiful-orb"></div>
+      <div className="beautiful-orb"></div>
+      <div className="beautiful-orb"></div>
+      
       {/* Professional Mouse Trail */}
       <div className="professional-mouse-trail" id="professional-mouse-trail"></div>
       
@@ -408,11 +413,17 @@ export default function App() {
         <header className="sticky top-0 z-30 professional-glass border-b border-white/20">
           <div className="max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-r from-accent-primary to-accent-secondary flex items-center justify-center text-white font-bold text-xl shadow-lg professional-interactive">
-                CF
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-r from-accent-primary to-accent-secondary flex items-center justify-center shadow-lg">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.89 22 5.99 22H18C19.1 22 20 21.1 20 20V8L14 2Z" fill="#ffffff"/>
+                  <path d="M14 2V8H20" fill="#ffffff"/>
+                  <path d="M16 13H8V15H16V13Z" fill="#8b7355"/>
+                  <path d="M16 17H8V19H16V17Z" fill="#8b7355"/>
+                  <path d="M10 9H8V11H10V9Z" fill="#8b7355"/>
+                </svg>
               </div>
               <div>
-                <div className="text-3xl font-extrabold text-gradient">Clarifile</div>
+                <div className="text-3xl font-extrabold" style={{color: '#8b7355'}}>Clarifile</div>
                 <div className="text-sm text-text-muted font-medium tracking-wide">DOCUMENT INTELLIGENCE PLATFORM</div>
               </div>
             </div>
@@ -427,7 +438,7 @@ export default function App() {
                 <button 
                   key={id} 
                   onClick={()=>setTab(id as any)} 
-                  className={`professional-nav-item ${tab===id?'active':''}`}
+                  className={`professional-nav-item professional-button ${tab===id?'active':''}`}
                 >
                   {label}
                 </button>
@@ -436,24 +447,24 @@ export default function App() {
           </div>
         </header>
 
-        {/* Global Notification Display */}
+        {/* Beautiful Theme-Matching Notification */}
         {notification && (
-          <div className="fixed top-20 right-6 z-50 max-w-md">
-            <div className="professional-card bg-gradient-to-r from-accent-primary to-accent-secondary text-white shadow-xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
-                  <div className="font-medium" style={{color: '#7A716A'}}>{notification}</div>
-                </div>
-                <button 
-                  onClick={() => setNotification(null)}
-                  className="ml-4 text-white/80 hover:text-white transition-colors"
-                  style={{color: '#ffffff'}}
-                >
-                  ✕
-                </button>
+          <div className="notification-toast notification-info">
+            <div className="notification-content">
+              <div className="notification-icon">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                </svg>
               </div>
+              <span style={{color: '#4a4a4a', fontSize: '13px'}}>{notification}</span>
             </div>
+            <button 
+              onClick={() => setNotification(null)}
+              className="notification-close"
+              title="Close notification"
+            >
+              ×
+            </button>
           </div>
         )}
 
@@ -461,35 +472,52 @@ export default function App() {
           {tab==='dashboard' && (
             <Section>
               {/* Enhanced Hero Section */}
-              <div className="text-center py-20 fade-in relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-accent-primary/10 to-accent-secondary/10 rounded-3xl blur-3xl"></div>
-                <div className="relative z-10">
-                  <h1 className="hero-heading mb-8 text-pop">Welcome to Clarifile</h1>
-                  <p className="body-text text-lg mb-16 max-w-4xl mx-auto text-gradient">
+              <div className="text-center py-16 fade-in relative">
+                <div className="relative z-10 max-w-6xl mx-auto px-6">
+                <h1 className="hero-heading mb-6">Welcome to Clarifile</h1>
+                  <p className="body-text text-lg mb-12 max-w-3xl mx-auto">
                     Transform your digital chaos into organized perfection with AI-powered document management and intelligent file organization
                   </p>
                   
-                  {/* Enhanced Action Cards */}
-                  <div className="grid gap-8 md:grid-cols-3 max-w-5xl mx-auto mb-16">
-                    <div className="professional-card professional-interactive fade-in" style={{animationDelay: '0.1s'}}>
-                      <div className="text-5xl mb-6"></div>
+                  {/* Clean Action Cards */}
+                  <div className="grid gap-6 md:grid-cols-3 mb-12">
+                  <div className="professional-card dark-card fade-in" style={{animationDelay: '0.1s'}}>
+                      <div className="cool-icon mb-6">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z" fill="currentColor"/>
+                          <path d="M19 15L20.09 18.26L24 19L20.09 19.74L19 23L17.91 19.74L14 19L17.91 18.26L19 15Z" fill="currentColor"/>
+                          <path d="M5 15L6.09 18.26L10 19L6.09 19.74L5 23L3.91 19.74L0 19L3.91 18.26L5 15Z" fill="currentColor"/>
+                        </svg>
+                      </div>
                       <h3 className="card-heading mb-3">Smart Organization</h3>
-                      <p className="muted-text">AI-powered categorization automatically organizes your files into intelligent folders</p>
+                      <p className="card-description">AI-powered categorization automatically organizes your files into intelligent folders</p>
                     </div>
-                    <div className="professional-card professional-interactive fade-in" style={{animationDelay: '0.2s'}}>
-                      <div className="text-5xl mb-6"></div>
+                    <div className="professional-card dark-card fade-in" style={{animationDelay: '0.2s'}}>
+                      <div className="cool-icon mb-6">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M15.5 14H14.71L14.43 13.73C15.41 12.59 16 11.11 16 9.5C16 5.91 13.09 3 9.5 3S3 5.91 3 9.5S5.91 16 9.5 16C11.11 16 12.59 15.41 13.73 14.43L14 14.71V15.5L19 20.49L20.49 19L15.5 14ZM9.5 14C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5S14 7.01 14 9.5S11.99 14 9.5 14Z" fill="currentColor"/>
+                          <circle cx="9.5" cy="9.5" r="2.5" fill="currentColor"/>
+                        </svg>
+                      </div>
                       <h3 className="card-heading mb-3">Intelligent Search</h3>
-                      <p className="muted-text">Find any document instantly with advanced semantic search and content analysis</p>
+                      <p className="card-description">Find any document instantly with advanced semantic search and content analysis</p>
                     </div>
-                    <div className="professional-card professional-interactive fade-in" style={{animationDelay: '0.3s'}}>
-                      <div className="text-5xl mb-6"></div>
+                    <div className="professional-card dark-card fade-in" style={{animationDelay: '0.3s'}}>
+                      <div className="cool-icon mb-6">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M7 2V13L10.5 9.5L14 13V2H7Z" fill="currentColor"/>
+                          <path d="M19 7V9H17V7H19ZM19 11V13H17V11H19ZM19 15V17H17V15H19Z" fill="currentColor"/>
+                          <path d="M3 7V9H15V7H3ZM3 11V13H15V11H3ZM3 15V17H15V15H3Z" fill="currentColor"/>
+                          <path d="M21 19V21H3V19H21Z" fill="currentColor"/>
+                        </svg>
+                      </div>
                       <h3 className="card-heading mb-3">Lightning Fast</h3>
-                      <p className="muted-text">Process thousands of files in seconds with our optimized AI engine</p>
+                      <p className="card-description">Process thousands of files in seconds with our optimized AI engine</p>
                     </div>
                   </div>
                   
-                  {/* Enhanced Main Action Button */}
-                  <Button tone='primary' onClick={handleScan} disabled={isScanning} loading={isScanning} className="text-lg px-16 py-4 text-pop">
+                  {/* Clean Main Action Button */}
+                  <Button tone='primary' onClick={handleScan} disabled={isScanning} loading={isScanning} className="professional-button">
                     {isScanning ? (
                       <div className="flex items-center gap-3">
                         <div className="professional-spinner"></div>
@@ -527,60 +555,89 @@ export default function App() {
               
               {/* Enhanced Stats Section */}
               <div className="grid gap-6 md:grid-cols-4 mb-16">
-                <div className="professional-card professional-interactive fade-in" style={{animationDelay: '0.4s'}}>
-                  <div className="text-4xl font-bold text-gradient mb-3">{driveProps.length}</div>
-                  <div className="muted-text">Document Proposals</div>
+                <div className="professional-card dark-card fade-in" style={{animationDelay: '0.4s'}}>
+                  <div className="cool-icon mb-4">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.89 22 5.99 22H18C19.1 22 20 21.1 20 20V8L14 2Z" fill="currentColor"/>
+                      <path d="M14 2V8H20" fill="currentColor"/>
+                    </svg>
+                  </div>
+                  <div className="text-3xl font-bold mb-2">{driveProps.length}</div>
+                  <div className="card-description">Document Proposals</div>
                 </div>
-                <div className="professional-card professional-interactive fade-in" style={{animationDelay: '0.5s'}}>
-                  <div className="text-4xl font-bold text-gradient mb-3">{driveProps.length}</div>
-                  <div className="muted-text">Drive Files</div>
+                <div className="professional-card dark-card fade-in" style={{animationDelay: '0.5s'}}>
+                  <div className="cool-icon mb-4">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M10 4H4C2.89 4 2 4.89 2 6V18C2 19.11 2.89 20 4 20H20C21.11 20 22 19.11 22 18V8C22 6.89 21.11 6 20 6H12L10 4Z" fill="currentColor"/>
+                    </svg>
+                  </div>
+                  <div className="text-3xl font-bold mb-2">{driveProps.length}</div>
+                  <div className="card-description">Drive Files</div>
                 </div>
-                <div className="professional-card professional-interactive fade-in" style={{animationDelay: '0.6s'}}>
-                  <div className="text-4xl font-bold text-gradient mb-3">{dups.length}</div>
-                  <div className="muted-text">Duplicate Groups</div>
+                <div className="professional-card dark-card fade-in" style={{animationDelay: '0.6s'}}>
+                  <div className="cool-icon mb-4">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM19 19H5V5H19V19Z" fill="currentColor"/>
+                      <path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3Z" fill="currentColor"/>
+                    </svg>
+                  </div>
+                  <div className="text-3xl font-bold mb-2">{dups.length}</div>
+                  <div className="card-description">Duplicate Groups</div>
                 </div>
-                <div className="professional-card professional-interactive fade-in" style={{animationDelay: '0.7s'}}>
-                  <div className="text-4xl font-bold text-gradient mb-3">{cats.length}</div>
-                  <div className="muted-text">Categories</div>
+                <div className="professional-card dark-card fade-in" style={{animationDelay: '0.7s'}}>
+                  <div className="cool-icon mb-4">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 2L15.09 8.26L22 9L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9L8.91 8.26L12 2Z" fill="currentColor"/>
+                    </svg>
+                  </div>
+                  <div className="text-3xl font-bold mb-2">{cats.length}</div>
+                  <div className="card-description">Categories</div>
                 </div>
               </div>
               
               {/* Enhanced Document Proposals Section */}
               <div className="fade-in" style={{animationDelay: '0.8s'}}>
-                <div className="flex items-center justify-between mb-10">
-                  <h2 className="section-heading">Recent Document Proposals</h2>
-                  <Button tone='secondary'>
+                <div className="proposals-section-header">
+                  <h2 className="proposals-section-title">📄 Recent Document Proposals</h2>
+                  <Button tone='secondary' className="professional-button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z" fill="currentColor"/>
+                    </svg>
                     View All
                   </Button>
                 </div>
                 
                 {driveProps.length > 0 ? (
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="proposals-grid">
                     {driveProps.slice(0, 4).map((p, index) => (
-                      <div key={p.id} className="professional-card professional-interactive fade-in" style={{animationDelay: `${0.9 + index * 0.1}s`}}>
-                        <div className="flex items-start justify-between mb-6">
-                          <div className="flex-1">
-                            <div className="card-heading mb-3">{p.name}</div>
-                            <div className="muted-text">
-                              <span className="inline-flex items-center gap-2">
-                                Proposed: {p.proposed_category}
-                              </span>
+                      <div key={p.id} className="document-proposal-card fade-in" style={{animationDelay: `${0.9 + index * 0.1}s`}}>
+                        <div className="proposal-header">
+                          <div className="proposal-info">
+                            <div className="proposal-title">{p.name}</div>
+                            <div className="proposal-category">
+                              Proposed: {p.proposed_category}
                             </div>
                           </div>
-                          <div className="text-sm px-4 py-2 rounded-full bg-gradient-to-r from-accent-primary to-accent-secondary text-white text-accent-primary border border-accent-primary/30">
-                            {p.final ? (
+                          <div className={`proposal-status ${(p as any).final ? 'approved' : 'proposed'}`}>
+                            {(p as any).final ? (
                               <span className="flex items-center gap-2">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                </svg>
                                 Approved
                               </span>
                             ) : (
                               <span className="flex items-center gap-2">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                                </svg>
                                 Proposed
                               </span>
                             )}
                           </div>
                         </div>
-                        <div className="mt-8 flex gap-4 flex-wrap">
-                          <Button tone='success' onClick={async()=>{ 
+                        <div className="proposal-actions">
+                          <button className="proposal-button approve" onClick={async()=>{ 
                             try {
                               const response = await call('/approve',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({file_id:p.id, final_label:p.proposed_category})});
                               if (response?.error) {
@@ -593,31 +650,42 @@ export default function App() {
                               setNotification(`Error approving file: ${error?.message || 'Unknown error'}`);
                             } 
                           }}>
-                            <span className="flex items-center gap-2">
-                              Approve
-                            </span>
-                          </Button>
-                          <Button tone='secondary' onClick={async()=>{
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                            </svg>
+                            Approve
+                          </button>
+                          <button className="proposal-button secondary" onClick={async()=>{
                             const r = await fetch(`${BASE}/file_summary?file_id=${p.id}`); 
                             if(r.status===200){ 
                               const j = await r.json(); 
                               alert(`Summary: ${j.summary}`); 
                             }
                           }}>
-                            <span className="flex items-center gap-2">
-                              View Summary
-                            </span>
-                          </Button>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                            </svg>
+                            View Summary
+                          </button>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="professional-card text-center py-12">
-                    <div className="text-6xl mb-6"></div>
-                    <h3 className="card-heading mb-4">No Document Proposals Yet</h3>
-                    <p className="muted-text mb-8">Start by scanning your files to get intelligent organization suggestions</p>
-                    <Button tone='primary' onClick={handleScan}>
+                  <div className="proposals-empty-state">
+                    <div className="proposals-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.89 22 5.99 22H18C19.1 22 20 21.1 20 20V8L14 2Z"/>
+                        <path d="M14 2V8H20"/>
+                        <circle cx="12" cy="15" r="2"/>
+                      </svg>
+                    </div>
+                    <h3 className="proposals-empty-title">No Document Proposals Yet</h3>
+                    <p className="proposals-empty-description">Start by scanning your files to get intelligent organization suggestions</p>
+                    <Button tone='primary' onClick={handleScan} className="professional-button">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z"/>
+                      </svg>
                       Start Your First Scan
                     </Button>
                   </div>
@@ -629,50 +697,57 @@ export default function App() {
           {tab==='drive' && (
             <Section>
               <div className="fade-in">
-                <div className="flex items-center justify-between mb-10">
-                  <h2 className="section-heading">Drive Files</h2>
-                  <div className="flex gap-4">
-                    <Button tone='secondary' onClick={refreshDrive} disabled={isLoading('refreshDrive')} loading={isLoading('refreshDrive')}>
+                <div className="drive-section-header">
+                  <h2 className="drive-section-title">Drive Files</h2>
+                  <div className="button-group">
+                    <Button tone='secondary' onClick={refreshDrive} disabled={isLoading('refreshDrive')} loading={isLoading('refreshDrive')} className="professional-button">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                      </svg>
                       Refresh Files
                     </Button>
-                    <Button tone='primary' onClick={handleScan} disabled={isScanning} loading={isScanning}>
+                    <Button tone='primary' onClick={handleScan} disabled={isScanning} loading={isScanning} className="professional-button">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z"/>
+                      </svg>
                       Scan Drive
                     </Button>
                   </div>
                 </div>
                 
                 {driveProps.length > 0 ? (
-                  <div className="grid gap-6">
+                  <div className="grid gap-4">
                     {driveProps.map((file, index) => (
-                      <div key={file.id} className={`professional-card professional-interactive fade-in ${driveAnalyzedId === file.id ? 'ring-2 ring-accent-primary bg-accent-primary/10' : ''}`} style={{animationDelay: `${index * 0.1}s`}}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
+                      <div key={file.id} className={`drive-file-card fade-in ${driveAnalyzedId === file.id ? 'selected' : ''}`} style={{animationDelay: `${index * 0.1}s`}}>
+                        <div className="file-header">
+                          <div className="file-info">
                             <div className="flex items-center gap-3 mb-2">
-                              <div className="card-heading">{file.name}</div>
+                              <div className="file-name">{file.name}</div>
                               {driveAnalyzedId === file.id && (
-                                <div className="px-3 py-1 rounded-full bg-gradient-to-r from-accent-primary to-accent-secondary text-white text-sm font-medium">
+                                <div className="ai-selected-badge">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                  </svg>
                                   Selected for AI
                                 </div>
                               )}
                             </div>
-                            <div className="muted-text flex flex-col gap-2">
-                              <span className="inline-flex items-center gap-2">
-                                Proposed Category: {file.proposed_category}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <label className="text-sm">Custom Category:</label>
-                                <input
-                                  type="text"
-                                  value={customLabels[file.id] || ''}
-                                  onChange={(e)=> setCustomLabels(prev=>({...prev, [file.id]: e.target.value}))}
-                                  placeholder="Enter custom folder name"
-                                  className="px-2 py-1 rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-accent-primary bg-bg-card text-text-primary"
-                                />
-                              </div>
+                            <div className="file-category">
+                              Proposed Category: {file.proposed_category}
+                            </div>
+                            <div className="custom-category-container">
+                              <label className="custom-category-label">Custom Category:</label>
+                              <input
+                                type="text"
+                                value={customLabels[file.id] || ''}
+                                onChange={(e)=> setCustomLabels(prev=>({...prev, [file.id]: e.target.value}))}
+                                placeholder="Enter custom folder name"
+                                className="custom-category-input"
+                              />
                             </div>
                           </div>
-                          <div className="flex gap-3">
-                            <Button tone='secondary' onClick={() => {
+                          <div className="file-actions">
+                            <button className={`file-action-button analyze ${driveAnalyzedId === file.id ? 'selected' : ''}`} onClick={() => {
                               console.log('ANALYZE BUTTON CLICKED!');
                               console.log('File:', file.name, file.id);
                               console.log('Current loading state:', isLoading('analyzeFile'));
@@ -726,10 +801,13 @@ export default function App() {
                                 console.log('Set loading to false due to error');
                                 console.log('=== BUTTON CLICK DEBUG END ===');
                               });
-                            }} disabled={isLoading('analyzeFile')} loading={isLoading('analyzeFile')}>
+                            }} disabled={isLoading('analyzeFile')}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                              </svg>
                               {driveAnalyzedId === file.id ? 'Selected' : 'Analyze'}
-                            </Button>
-                            <Button tone='success' onClick={async () => {
+                            </button>
+                            <button className="file-action-button approve" onClick={async () => {
                               const label = (customLabels[file.id] && customLabels[file.id].trim()) ? customLabels[file.id].trim() : file.proposed_category
                               if (!label) { 
                                 setNotification('Please provide a category'); 
@@ -763,19 +841,29 @@ export default function App() {
                               // Optionally refresh drive list
                               await refreshDrive()
                             }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                              </svg>
                               Approve
-                            </Button>
+                            </button>
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="professional-card text-center py-12">
-                    <div className="text-6xl mb-6"></div>
-                    <h3 className="card-heading mb-4">No Drive Files Found</h3>
-                    <p className="muted-text mb-8">Connect your Google Drive and scan your files to get started</p>
-                    <Button tone='primary' onClick={handleScan}>
+                  <div className="drive-empty-state">
+                    <div className="proposals-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M10 4H4C2.89 4 2 4.89 2 6V18C2 19.11 2.89 20 4 20H20C21.11 20 22 19.11 22 18V8C22 6.89 21.11 6 20 6H12L10 4Z"/>
+                      </svg>
+                    </div>
+                    <h3 className="proposals-empty-title">No Drive Files Found</h3>
+                    <p className="proposals-empty-description">Connect your Google Drive and scan your files to get started</p>
+                    <Button tone='primary' onClick={handleScan} className="professional-button">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z"/>
+                      </svg>
                       Connect & Scan Drive
                     </Button>
                   </div>
@@ -787,15 +875,18 @@ export default function App() {
           {tab==='dups' && (
             <Section>
               <div className="fade-in">
-                <div className="flex items-center justify-between mb-10">
-                  <h2 className="section-heading">Duplicate Files</h2>
-                  <Button tone='secondary' onClick={refreshDups} disabled={isLoading('refreshDups')} loading={isLoading('refreshDups')}>
+                <div className="duplicates-section-header">
+                  <h2 className="duplicates-section-title">🔄 Duplicate Files</h2>
+                  <Button tone='secondary' onClick={refreshDups} disabled={isLoading('refreshDups')} loading={isLoading('refreshDups')} className="professional-button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                    </svg>
                     Refresh Duplicates
                   </Button>
                 </div>
                 
                 {dups.length > 0 ? (
-                  <div className="grid gap-6">
+                  <div className="grid gap-4">
                     {dups.map((group, index) => (
                       <DuplicateResolution
                         key={index}
@@ -812,10 +903,14 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <div className="professional-card text-center py-12">
-                    <div className="text-6xl mb-6"></div>
-                    <h3 className="card-heading mb-4">No Duplicates Found</h3>
-                    <p className="muted-text">Your files are well organized with no duplicates detected</p>
+                  <div className="duplicates-empty-state">
+                    <div className="duplicates-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                      </svg>
+                    </div>
+                    <h3 className="duplicates-empty-title">No Duplicates Found</h3>
+                    <p className="duplicates-empty-description">Your files are well organized with no duplicates detected</p>
                   </div>
                 )}
               </div>
@@ -825,65 +920,73 @@ export default function App() {
           {tab==='cats' && (
             <Section>
               <div className="fade-in">
-                <div className="flex items-center justify-between mb-10">
-                  <h2 className="section-heading">Categories</h2>
-                  <Button tone='secondary' onClick={refreshCats} disabled={isLoading('refreshCats')} loading={isLoading('refreshCats')}>
+                <div className="categories-section-header">
+                  <h2 className="categories-section-title">📁 Categories</h2>
+                  <Button tone='secondary' onClick={refreshCats} disabled={isLoading('refreshCats')} loading={isLoading('refreshCats')} className="professional-button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                    </svg>
                     Refresh Categories
                   </Button>
                 </div>
                 
                 {cats.length > 0 ? (
-                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="categories-grid">
                     {cats.map((cat, index) => (
-                      <div key={cat.name} className="professional-card professional-interactive fade-in" style={{animationDelay: `${index * 0.1}s`}}>
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="card-heading">{cat.name}</div>
-                          <div className="text-2xl px-4 py-2 rounded-full bg-gradient-to-r from-accent-primary/20 to-accent-secondary/20 text-accent-primary">
+                      <div key={cat.name} className="category-card fade-in" style={{animationDelay: `${index * 0.1}s`}}>
+                        <div className="category-header">
+                          <div className="category-name">{cat.name}</div>
+                          <div className="category-count">
                             {(cat.proposed?.length || 0)}
                           </div>
                         </div>
-                        <div className="muted-text">
+                        <div className={`category-status ${cat.folder_id ? 'available' : 'missing'}`}>
                           {cat.folder_id ? (
                             <span>
-                              Drive folder available · <a className="text-accent-primary underline" href={`https://drive.google.com/drive/folders/${cat.folder_id}`} target="_blank" rel="noreferrer">Open in Drive</a>
+                              Drive folder available · <a className="category-drive-link" href={`https://drive.google.com/drive/folders/${cat.folder_id}`} target="_blank" rel="noreferrer">Open in Drive</a>
                             </span>
-                          ) : (cat.missing_folder ? 'Folder missing in Drive' : `Files categorized as ${cat.name}`)}
+                          ) : (cat.missing_folder ? 'Folder missing in Drive' : `📂 Files categorized as ${cat.name}`)}
                         </div>
-                        <div className="mt-4">
-                          <div className="grid md:grid-cols-2 gap-4">
-                            <div>
-                              <h4 className="text-lg font-medium mb-2">Existing in folder</h4>
-                              <ul>
-                                {(cat.existing || []).map((file:any) => (
-                                  <li key={file.id} className="text-sm text-text-muted">{file.name}</li>
-                                ))}
-                                {(cat.existing || []).length === 0 && (
-                                  <li className="text-sm text-text-muted">No files present</li>
-                                )}
-                              </ul>
-                            </div>
-                            <div>
-                              <h4 className="text-lg font-medium mb-2">Proposed</h4>
-                              <ul>
-                                {(cat.proposed || []).map((file:any) => (
-                                  <li key={file.id} className="text-sm text-text-muted">{file.name}</li>
-                                ))}
-                                {(cat.proposed || []).length === 0 && (
-                                  <li className="text-sm text-text-muted">No proposals</li>
-                                )}
-                              </ul>
-                            </div>
+                        <div className="category-files">
+                          <div className="file-list-section">
+                            <h4 className="file-list-title">Existing in folder</h4>
+                            <ul className="file-list">
+                              {(cat.existing || []).map((file:any) => (
+                                <li key={file.id} className="file-list-item">{file.name}</li>
+                              ))}
+                              {(cat.existing || []).length === 0 && (
+                                <li className="file-list-empty">No files present</li>
+                              )}
+                            </ul>
+                          </div>
+                          <div className="file-list-section">
+                            <h4 className="file-list-title">Proposed</h4>
+                            <ul className="file-list">
+                              {(cat.proposed || []).map((file:any) => (
+                                <li key={file.id} className="file-list-item">{file.name}</li>
+                              ))}
+                              {(cat.proposed || []).length === 0 && (
+                                <li className="file-list-empty">No proposals</li>
+                              )}
+                            </ul>
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="professional-card text-center py-12">
-                    <div className="text-6xl mb-6"></div>
-                    <h3 className="card-heading mb-4">No Categories Yet</h3>
-                    <p className="muted-text mb-8">Scan your files to automatically generate smart categories</p>
-                    <Button tone='primary' onClick={handleScan}>
+                  <div className="drive-empty-state">
+                    <div className="proposals-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M10 4H4C2.89 4 2 4.89 2 6V18C2 19.11 2.89 20 4 20H20C21.11 20 22 19.11 22 18V8C22 6.89 21.11 6 20 6H12L10 4Z"/>
+                      </svg>
+                    </div>
+                    <h3 className="proposals-empty-title">No Categories Yet</h3>
+                    <p className="proposals-empty-description">Scan your files to automatically generate smart categories</p>
+                    <Button tone='primary' onClick={handleScan} className="professional-button">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z"/>
+                      </svg>
                       Create Categories
                     </Button>
                   </div>
@@ -898,57 +1001,61 @@ export default function App() {
                 <h2 className="section-heading mb-10">AI Assistant</h2>
                 
                 {notification && (
-                  <div className="professional-card mb-6">
-                    <div className="card-heading mb-4">Notification</div>
-                    <div className="muted-text">{notification}</div>
+                  <div className="ai-notification-compact">
+                    <div className="notification-header">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                      </svg>
+                      Status Update
+                    </div>
+                    <div className="notification-text">{notification}</div>
                   </div>
                 )}
                 
                 <div className="grid gap-8 lg:grid-cols-3">
                   <div className="lg:col-span-2">
-                    <div className="professional-card mb-6">
-                      <div className="card-heading mb-4">Chat History</div>
-                      <div className="space-y-4 max-h-96 overflow-y-auto">
+                    <div className="chat-container">
+                      <div className="chat-header"> Chat History</div>
+                      <div className="chat-messages">
                         {messages.length === 0 ? (
-                          <div className="text-center py-8 text-text-muted">
-                            <div className="text-4xl mb-4"></div>
-                            <p>Start a conversation with the AI assistant</p>
+                          <div className="chat-empty-state">
+                            <div className="chat-empty-icon"></div>
+                            <p className="chat-empty-text">Start a conversation with the AI assistant</p>
                           </div>
                         ) : (
-                          <div className="space-y-4">
+                          <div>
                             {messages.map((msg, index) => (
-                              <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-end gap-2`}>
-                                {/* Avatar for assistant */}
-                                {msg.role === 'assistant' && (
-                                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-accent-primary to-accent-secondary flex items-center justify-center text-white text-sm font-semibold">
-                                    AI
-                                  </div>
-                                )}
-                                
-                                {/* Message bubble */}
-                                <div className={`max-w-xs lg:max-w-md px-4 py-3 rounded-2xl ${
-                                  msg.role === 'user' 
-                                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-none shadow-lg' 
-                                    : 'bg-gray-100 text-gray-800 rounded-bl-none shadow-md'
-                                }`}>
-                                  {msg.content === '::typing::' ? (
-                                    <div className="flex items-center gap-2">
-                                      <div className="flex gap-1">
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                                      </div>
-                                      <span className="text-sm text-gray-500">Typing...</span>
+                              <div key={index} className="message-wrapper">
+                                {msg.role === 'user' ? (
+                                  /* User Message */
+                                  <div className="user-message-container">
+                                    <div className="user-message-bubble">
+                                      <div className="message-text">{msg.content}</div>
                                     </div>
-                                  ) : (
-                                    <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-                                  )}
-                                </div>
-                                
-                                {/* Avatar for user */}
-                                {msg.role === 'user' && (
-                                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-green-500 flex items-center justify-center text-white text-sm font-semibold">
-                                    U
+                                    <div className="chat-avatar user-avatar">
+                                      U
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* Assistant Message */
+                                  <div className="assistant-message-container">
+                                    <div className="chat-avatar assistant-avatar">
+                                      AI
+                                    </div>
+                                    <div className="assistant-message-bubble">
+                                      {msg.content === '::typing::' ? (
+                                        <div className="typing-indicator">
+                                          <div className="typing-dots">
+                                            <div className="typing-dot"></div>
+                                            <div className="typing-dot"></div>
+                                            <div className="typing-dot"></div>
+                                          </div>
+                                          <span className="typing-text">Typing...</span>
+                                        </div>
+                                      ) : (
+                                        <div className="message-text">{msg.content}</div>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -969,7 +1076,7 @@ export default function App() {
                           placeholder="Ask about your documents..."
                           className="flex-1 px-4 py-3 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-accent-primary bg-bg-card text-text-primary"
                         />
-                        <Button tone='primary' onClick={sendMsg} disabled={!askInput.trim()}>
+                        <Button tone='primary' onClick={sendMsg} disabled={!askInput.trim()} className="professional-button">
                           Send
                         </Button>
                       </div>
@@ -980,16 +1087,16 @@ export default function App() {
                     <div className="professional-card">
                       <div className="card-heading mb-4">Quick Actions</div>
                       <div className="space-y-3">
-                        <Button tone='secondary' className="w-full justify-start" onClick={() => handleQuickAction('summarize')} disabled={quickActionLoading} loading={quickActionLoading}>
+                        <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('summarize')} disabled={quickActionLoading} loading={quickActionLoading}>
                           Summarize Documents
                         </Button>
-                        <Button tone='secondary' className="w-full justify-start" onClick={() => handleQuickAction('find_similar')} disabled={quickActionLoading} loading={quickActionLoading}>
+                        <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('find_similar')} disabled={quickActionLoading} loading={quickActionLoading}>
                           Find Similar Files
                         </Button>
-                        <Button tone='secondary' className="w-full justify-start" onClick={() => handleQuickAction('extract_insights')} disabled={quickActionLoading} loading={quickActionLoading}>
+                        <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('extract_insights')} disabled={quickActionLoading} loading={quickActionLoading}>
                           Extract Insights
                         </Button>
-                        <Button tone='secondary' className="w-full justify-start" onClick={() => handleQuickAction('organize')} disabled={quickActionLoading} loading={quickActionLoading}>
+                        <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('organize')} disabled={quickActionLoading} loading={quickActionLoading}>
                           Organize Files
                         </Button>
                       </div>
@@ -1003,38 +1110,41 @@ export default function App() {
       </div>
       
       {showDocumentSelector ? (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden">
-            <div className="p-6 border-b border-gray-200">
+        <div className="quick-action-backdrop">
+          <div className="quick-action-modal">
+            <div className="quick-action-header">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold text-gray-800">
-                  Select a Document
-                </h3>
+                <div>
+                  <h3 className="quick-action-title">
+                    📄 Select a Document
+                  </h3>
+                  <p className="quick-action-subtitle">
+                    Choose a document to {currentQuickAction?.replace('_', ' ')}
+                  </p>
+                </div>
                 <button 
                   onClick={() => {
                     setShowDocumentSelector(false)
                     setQuickActionLoading(false)
                   }}
-                  className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors"
+                  className="quick-action-close"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
-              <p className="text-gray-600 mt-2">
-                Choose a document to {currentQuickAction?.replace('_', ' ')}
-              </p>
             </div>
             
-            <div className="p-4 overflow-y-auto max-h-[60vh]">
-              <div className="space-y-2">
-                {driveProps.length === 0 ? (
-                  <div className="text-center text-gray-500 py-8">
-                    No documents available
-                  </div>
-                ) : (
-                  driveProps.map((file) => (
+            <div className="quick-action-content">
+              {driveProps.length === 0 ? (
+                <div className="documents-empty">
+                  <div className="documents-empty-icon">📄</div>
+                  <p className="documents-empty-text">No documents available</p>
+                </div>
+              ) : (
+                <div>
+                  {driveProps.map((file, index) => (
                     <button
                       key={file.id}
                       onClick={() => {
@@ -1042,31 +1152,32 @@ export default function App() {
                         setNotification(`Selected: ${file.name}`)
                         performQuickAction(currentQuickAction!, file)
                       }}
-                      className="w-full p-4 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-all duration-200 text-left"
+                      className="document-item"
+                      style={{ animationDelay: `${index * 100}ms` }}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
+                      <div className="flex items-center">
+                        <div className="document-avatar">
                           {file.name.charAt(0).toUpperCase()}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-900 truncate">
+                        <div className="document-info">
+                          <div className="document-name">
                             {file.name}
                           </div>
-                          <div className="text-sm text-gray-500">
+                          <div className="document-category">
                             {file.proposed_category || 'Document'}
                           </div>
-                          <div className="text-xs text-gray-400">
+                          <div className="document-id">
                             ID: {file.id}
                           </div>
                         </div>
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 document-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </div>
                     </button>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
