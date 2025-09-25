@@ -67,6 +67,8 @@ export default function App() {
   const [analyzingFile, setAnalyzingFile] = useState<string | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
   const [messages, setMessages] = useState<{ role: 'user'|'assistant', content: string }[]>([])
+  const [chats, setChats] = useState<Record<string, { file: DriveProposal, messages: { role: 'user'|'assistant', content: string }[] }>>({})
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
   const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean}>({})
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null)
   const [showDocumentSelector, setShowDocumentSelector] = useState(false)
@@ -83,6 +85,25 @@ export default function App() {
 
   // Helper function to check if an operation is loading
   const isLoading = (operation: string) => loadingStates[operation] || false
+
+  // Ensure a chat exists for a given file and select it
+  const ensureChatForFile = (file: DriveProposal) => {
+    setChats(prev => {
+      if (prev[file.id]) return prev
+      return { ...prev, [file.id]: { file, messages: [] } }
+    })
+    setSelectedChatId(file.id)
+    setDriveAnalyzedId(file.id)
+  }
+
+  // Append a message to a specific chat
+  const appendToChat = (chatId: string, message: { role: 'user'|'assistant', content: string }) => {
+    setChats(prev => {
+      const chat = prev[chatId]
+      if (!chat) return prev
+      return { ...prev, [chatId]: { ...chat, messages: [...chat.messages, message] } }
+    })
+  }
 
   async function refreshDrive() {
     setLoading('refreshDrive', true)
@@ -216,68 +237,58 @@ export default function App() {
     const q = askInput.trim(); 
     if(!q) return;
     
-    // Add user message
-    setMessages(prev => [...prev, { role:'user', content: q }])
+    if (!selectedChatId || !chats[selectedChatId]) {
+      setNotification('Select a chat from the left to ask about a specific file.')
+      return
+    }
+
+    // Add user message into the selected chat
+    appendToChat(selectedChatId, { role: 'user', content: q })
     setAskInput('')
     
-    // Add typing indicator
-    setMessages(prev => [...prev, { role:'assistant', content: '::typing::' }])
-    
-    // Helper function to update the last message
-    const updateLast = (text:string)=> setMessages(prev => { 
-      const arr=[...prev]; 
-      arr[arr.length-1] = { role:'assistant', content: text }; 
-      return arr 
-    })
+    // Add typing indicator into chat
+    appendToChat(selectedChatId, { role: 'assistant', content: '::typing::' })
+    const replaceTypingWith = (text: string) => {
+      setChats(prev => {
+        const chat = prev[selectedChatId!]
+        if (!chat) return prev
+        const msgs = [...chat.messages]
+        if (msgs.length && msgs[msgs.length - 1].content === '::typing::' && msgs[msgs.length - 1].role === 'assistant') {
+          msgs[msgs.length - 1] = { role: 'assistant', content: text }
+        } else {
+          msgs.push({ role: 'assistant', content: text })
+        }
+        return { ...prev, [selectedChatId!]: { ...chat, messages: msgs } }
+      })
+    }
     
     try {
-      let response: any;
-      
-      // Check if we have a specific drive file to analyze
-      if (driveAnalyzedId) {
-        response = await call('/drive/analyze', { 
-          method:'POST', 
-          headers:{'Content-Type':'application/json'}, 
-          body: JSON.stringify({ 
-            file:{ id:driveAnalyzedId, name:'', mimeType:'', parents:[] }, 
-            q 
-          }) 
-        })
-        
-        if (response?.error) { 
-          updateLast(`Error: ${response.error}`)
-          return 
-        }
-        
-        const ans = response?.qa?.answer || response?.summary || 'No answer available'
-        updateLast(ans)
-        setAskResult(response?.qa || { answer: ans })
-        
-      } else {
-        // Check if we have any drive proposals to work with
-        const ids = (driveProps||[]).slice(0,1).map(p=>p.id)
-        
-        if (ids.length===0) { 
-          updateLast('No document selected. Please go to the Drive tab and select a file to analyze first.')
-          return 
-        }
-        
-        // Use the consistent call helper function
-        response = await call(`/ask?file_id=${ids[0]}&q=${encodeURIComponent(q)}`)
-        
-        if (response?.error) { 
-          updateLast(`Error: ${response.error}`)
-          return 
-        }
-        
-        const ans = response?.answer || response?.error || 'No answer available'
-        updateLast(ans)
-        setAskResult(response)
+      const chat = chats[selectedChatId]
+      const file = chat.file
+      if (!file?.id || String(file.id).startsWith('demo-file-')) {
+        replaceTypingWith('This is a demo chat. Please pick a real document from Files or run Analyze/Summarize on a Drive file to chat about it.')
+        return
       }
+      const fileId = String(file.id)
+      const response = await call('/drive/analyze', { 
+        method:'POST', 
+        headers:{'Content-Type':'application/json'}, 
+        body: JSON.stringify({ 
+          file:{ id:fileId, name:file.name||'', mimeType:'', parents:[] }, 
+          q 
+        }) 
+      })
+      if (response?.error) {
+        replaceTypingWith(`Error: ${response.error}. If this persists, ensure Google Drive is connected and try reloading files.`)
+        return
+      }
+      const ans = response?.qa?.answer || response?.summary || 'No answer available'
+      replaceTypingWith(ans)
+      setAskResult(response?.qa || { answer: ans })
       
     } catch (e:any) {
       console.error('Chatbot error:', e)
-      updateLast(`Error: ${e?.message || 'Failed to get response from AI assistant. Please try again.'}`)
+      replaceTypingWith(`Error: ${e?.message || 'Failed to get response from AI assistant.'} If this keeps happening, reselect the file in Files and click Analyze again.`)
     }
   }
 
@@ -320,11 +331,48 @@ export default function App() {
       
       switch (action) {
         case 'summarize':
-          // Show actual file analysis/content summary (like Analyze button)
-          const isDemo = file.id.startsWith('demo-file-')
-          messageContent = isDemo ? 
-            `**Summary Feature Demo**\n\n• **Feature:** Document Summarization\n• **Purpose:** Analyzes document content and provides key insights\n• **Usage:** Select a real document to get actual summary\n• **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.` :
-            `**Content Summary of "${file.name}"**\n\n• **Document Analysis:** Content has been processed and analyzed\n• **Key Topics:** Based on content analysis, this appears to be ${file.proposed_category.toLowerCase()}-related material\n• **Content Structure:** Document contains structured information suitable for organization\n• **Text Content:** File contains readable text that has been successfully parsed\n• **Processing Status:** Analysis complete, ready for organization\n\n**Summary:** This document has been categorized as "${file.proposed_category}" based on its content analysis. The file contains structured information and is ready for proper organization.`
+          // For demo files, show demo in a chat; otherwise mirror Analyze into file chat
+          {
+            const isDemo = file.id.startsWith('demo-file-')
+            ensureChatForFile(file)
+            if (isDemo) {
+              const demoContent = `**Summary Feature Demo**\n\n• **Feature:** Document Summarization\n• **Purpose:** Analyzes document content and provides key insights\n• **Usage:** Select a real document to get actual summary\n• **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+              appendToChat(file.id, { role: 'assistant', content: demoContent })
+              setQuickActionLoading(false)
+              setNotification('Summary demo shown')
+              return
+            }
+            call('/drive/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                file: {
+                  id: file.id,
+                  name: file.name,
+                  mimeType: '',
+                  parents: []
+                },
+                q: 'Analyze this document and provide a summary'
+              })
+            }).then(response => {
+              if (response && response.summary !== undefined) {
+                appendToChat(file.id, {
+                  role: 'assistant',
+                  content: `I've analyzed the file \"${file.name}\". Here's what I found:\n\n**Summary:** ${response.summary}\n**Category:** ${response.category || 'General'}\n**Tags:** ${response.tags?.join(', ') || 'None'}\n\nYou can now ask me questions about this file!`
+                })
+                setNotification('Summary generated successfully!')
+              } else if (response?.error) {
+                appendToChat(file.id, { role: 'assistant', content: `Error: ${response.error}` })
+              } else {
+                appendToChat(file.id, { role: 'assistant', content: 'No summary available.' })
+              }
+              setQuickActionLoading(false)
+            }).catch((e:any) => {
+              appendToChat(file.id, { role: 'assistant', content: `Error analyzing file: ${e?.message || 'Unknown error'}` })
+              setQuickActionLoading(false)
+            })
+            return
+          }
           break
           
         case 'find_similar':
@@ -382,6 +430,27 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative overflow-hidden">
+      {notification && (
+        <div style={{ position: 'fixed', top: 16, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 9999, pointerEvents: 'none' }}>
+          <div className="notification-toast notification-info" style={{ pointerEvents: 'auto' }}>
+            <div className="notification-content">
+              <div className="notification-icon">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                </svg>
+              </div>
+              <span style={{color: '#4a4a4a', fontSize: '13px'}}>{notification}</span>
+            </div>
+            <button 
+              onClick={() => setNotification(null)}
+              className="notification-close"
+              title="Close notification"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
       {/* Professional Background Effects */}
       <div className="professional-shapes">
         <div className="professional-shape"></div>
@@ -447,26 +516,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* Beautiful Theme-Matching Notification */}
-        {notification && (
-          <div className="notification-toast notification-info">
-            <div className="notification-content">
-              <div className="notification-icon">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-                </svg>
-              </div>
-              <span style={{color: '#4a4a4a', fontSize: '13px'}}>{notification}</span>
-            </div>
-            <button 
-              onClick={() => setNotification(null)}
-              className="notification-close"
-              title="Close notification"
-            >
-              ×
-            </button>
-          </div>
-        )}
+        {/* Beautiful Theme-Matching Notification - moved to global fixed container at bottom */}
 
         <div className="page-transition">
           {tab==='dashboard' && (
@@ -781,14 +831,14 @@ export default function App() {
                                 setDriveAnalyzedId(file.id);
                                 setNotification('File analyzed successfully!');
                                 
-                                // Add the analyzed file to the AI Assistant context
+                                // Ensure chat exists and append analysis to that chat
+                                ensureChatForFile(file)
                                 if (response.summary) {
-                                  const analysisMessage = {
-                                    role: 'assistant' as const,
+                                  appendToChat(file.id, {
+                                    role: 'assistant',
                                     content: `I've analyzed the file "${file.name}". Here's what I found:\n\n**Summary:** ${response.summary}\n**Category:** ${response.category || 'General'}\n**Tags:** ${response.tags?.join(', ') || 'None'}\n\nYou can now ask me questions about this file!`
-                                  };
-                                  setMessages(prev => [...prev, analysisMessage]);
-                                  console.log('Added analysis to AI Assistant');
+                                  })
+                                  console.log('Added analysis to AI Assistant chat')
                                 }
                                 
                                 setLoading('analyzeFile', false);
@@ -1014,71 +1064,91 @@ export default function App() {
                 
                 <div className="grid gap-8 lg:grid-cols-3">
                   <div className="lg:col-span-2">
-                    <div className="chat-container">
-                      <div className="chat-header"> Chat History</div>
-                      <div className="chat-messages">
-                        {messages.length === 0 ? (
-                          <div className="chat-empty-state">
-                            <div className="chat-empty-icon"></div>
-                            <p className="chat-empty-text">Start a conversation with the AI assistant</p>
-                          </div>
-                        ) : (
-                          <div>
-                            {messages.map((msg, index) => (
-                              <div key={index} className="message-wrapper">
-                                {msg.role === 'user' ? (
-                                  /* User Message */
-                                  <div className="user-message-container">
-                                    <div className="user-message-bubble">
-                                      <div className="message-text">{msg.content}</div>
-                                    </div>
-                                    <div className="chat-avatar user-avatar">
-                                      U
-                                    </div>
-                                  </div>
-                                ) : (
-                                  /* Assistant Message */
-                                  <div className="assistant-message-container">
-                                    <div className="chat-avatar assistant-avatar">
-                                      AI
-                                    </div>
-                                    <div className="assistant-message-bubble">
-                                      {msg.content === '::typing::' ? (
-                                        <div className="typing-indicator">
-                                          <div className="typing-dots">
-                                            <div className="typing-dot"></div>
-                                            <div className="typing-dot"></div>
-                                            <div className="typing-dot"></div>
-                                          </div>
-                                          <span className="typing-text">Typing...</span>
-                                        </div>
-                                      ) : (
-                                        <div className="message-text">{msg.content}</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                    <div className="flex gap-4">
+                      {/* Sidebar listing chats by file name */}
+                      <div className="professional-card" style={{ width: 280, flex: '0 0 auto' }}>
+                        <div className="card-heading mb-3">Chats</div>
+                        <div className="space-y-2">
+                          {Object.keys(chats).length === 0 ? (
+                            <div className="chat-empty-state">
+                              <div className="chat-empty-icon"></div>
+                              <p className="chat-empty-text">Analyze a file to start a chat</p>
+                            </div>
+                          ) : (
+                            Object.values(chats).map(({ file }) => (
+                              <button
+                                key={file.id}
+                                onClick={() => { setSelectedChatId(file.id); setDriveAnalyzedId(file.id) }}
+                                className={`w-full text-left professional-button ${selectedChatId === file.id ? 'active' : ''}`}
+                              >
+                                {file.name}
+                              </button>
+                            ))
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    
-                    <div className="professional-card">
-                      <div className="flex gap-4">
-                        <input
-                          ref={inputRef}
-                          type="text"
-                          value={askInput}
-                          onChange={(e) => setAskInput(e.target.value)}
-                          onKeyPress={(e) => e.key === 'Enter' && sendMsg()}
-                          placeholder="Ask about your documents..."
-                          className="flex-1 px-4 py-3 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-accent-primary bg-bg-card text-text-primary"
-                        />
-                        <Button tone='primary' onClick={sendMsg} disabled={!askInput.trim()} className="professional-button">
-                          Send
-                        </Button>
+                      {/* Chat pane */}
+                      <div className="flex-1">
+                        <div className="chat-container">
+                          <div className="chat-header"> {selectedChatId && chats[selectedChatId] ? chats[selectedChatId].file.name : 'Chat'}</div>
+                          <div className="chat-messages">
+                            {!selectedChatId || !chats[selectedChatId] || chats[selectedChatId].messages.length === 0 ? (
+                              <div className="chat-empty-state">
+                                <div className="chat-empty-icon"></div>
+                                <p className="chat-empty-text">Select a chat or analyze a file to begin</p>
+                              </div>
+                            ) : (
+                              <div>
+                                {chats[selectedChatId].messages.map((msg, index) => (
+                                  <div key={index} className="message-wrapper">
+                                    {msg.role === 'user' ? (
+                                      <div className="user-message-container">
+                                        <div className="user-message-bubble">
+                                          <div className="message-text">{msg.content}</div>
+                                        </div>
+                                        <div className="chat-avatar user-avatar">U</div>
+                                      </div>
+                                    ) : (
+                                      <div className="assistant-message-container">
+                                        <div className="chat-avatar assistant-avatar">AI</div>
+                                        <div className="assistant-message-bubble">
+                                          {msg.content === '::typing::' ? (
+                                            <div className="typing-indicator">
+                                              <div className="typing-dots">
+                                                <div className="typing-dot"></div>
+                                                <div className="typing-dot"></div>
+                                                <div className="typing-dot"></div>
+                                              </div>
+                                              <span className="typing-text">Typing...</span>
+                                            </div>
+                                          ) : (
+                                            <div className="message-text">{msg.content}</div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="professional-card">
+                          <div className="flex gap-4">
+                            <input
+                              ref={inputRef}
+                              type="text"
+                              value={askInput}
+                              onChange={(e) => setAskInput(e.target.value)}
+                              onKeyPress={(e) => e.key === 'Enter' && sendMsg()}
+                              placeholder="Ask about this file..."
+                              className="flex-1 px-4 py-3 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-accent-primary bg-bg-card text-text-primary"
+                            />
+                            <Button tone='primary' onClick={sendMsg} disabled={!askInput.trim() || !selectedChatId} className="professional-button">
+                              Send
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1094,7 +1164,7 @@ export default function App() {
                           Find Similar Files
                         </Button>
                         <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('extract_insights')} disabled={quickActionLoading} loading={quickActionLoading}>
-                          Extract Insights
+                          Info Panel
                         </Button>
                         <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('organize')} disabled={quickActionLoading} loading={quickActionLoading}>
                           Organize Files
