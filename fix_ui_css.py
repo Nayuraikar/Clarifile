@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 def build_ui():
-    print("🔧 Building UI to generate CSS files...")
+    print("Building UI to generate CSS files...")
     print("=" * 50)
     
     ui_dir = "/Users/nayana/Desktop/PROGRAMS/clarifile/ui"
@@ -16,43 +16,41 @@ def build_ui():
     os.chdir(ui_dir)
     
     # Install dependencies if needed
-    print("📦 Installing dependencies...")
+    print("Installing dependencies...")
     try:
         subprocess.run([sys.executable, "-m", "npm", "install"], check=True)
-        print("✅ Dependencies installed")
     except subprocess.CalledProcessError:
-        print("❌ Failed to install dependencies")
+        print("[ERROR] Failed to install dependencies")
         return False
     
     # Build the UI
-    print("🏗️  Building UI with Vite...")
+    print("Building UI with Vite...")
     try:
-        subprocess.run([sys.executable, "-m", "npm", "run", "build"], check=True)
-        print("✅ UI built successfully")
-    except subprocess.CalledProcessError:
-        print("❌ Failed to build UI")
-        return False
+        subprocess.run([sys.executable, "-m", "npm", "run", "build"], check=True, capture_output=True)
+        print("[OK] UI built successfully")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to build UI: {e.stdout.decode('utf-8')}")
     
     # Check if files were created
     dist_dir = os.path.join(ui_dir, "dist")
     if os.path.exists(dist_dir):
         files = os.listdir(dist_dir)
-        print(f"📁 Built files: {files}")
+        print(f"Built files: {files}")
         
         # Check for CSS files
         css_files = [f for f in files if f.endswith('.css')]
         if css_files:
-            print(f"✅ CSS files found: {css_files}")
+            print(f"[OK] CSS files found: {css_files}")
         else:
-            print("⚠️  No CSS files found in dist")
+            print("[WARN] No CSS files found in dist")
     else:
-        print("❌ dist directory not created")
+        print("[ERROR] dist directory not created")
         return False
     
     return True
 
 def update_gateway_static_files():
-    print("\n🔧 Updating gateway to serve static files...")
+    print("\nUpdating gateway to serve static files...")
     print("=" * 50)
     
     gateway_file = "/Users/nayana/Desktop/PROGRAMS/clarifile/gateway/index.js"
@@ -63,7 +61,7 @@ def update_gateway_static_files():
     
     # Check if static file serving is already added
     if 'app.use(express.static' in content:
-        print("✅ Static file serving already configured")
+        print("[OK] Static file serving already configured")
         return True
     
     # Add static file serving after the app.use(cors()) line
@@ -84,11 +82,11 @@ def update_gateway_static_files():
     with open(gateway_file, 'w') as f:
         f.write('\n'.join(new_lines))
     
-    print("✅ Added static file serving to gateway")
+    print("[OK] Added static file serving to gateway")
     return True
 
 def update_html_css_reference():
-    print("\n🔧 Updating HTML to reference correct CSS file...")
+    print("\nUpdating HTML to reference correct CSS file...")
     print("=" * 50)
     
     html_file = "/Users/nayana/Desktop/PROGRAMS/clarifile/ui/index.html"
@@ -106,7 +104,7 @@ def update_html_css_reference():
         if css_files:
             # Use the first CSS file found
             css_file = css_files[0]
-            print(f"📄 Using CSS file: {css_file}")
+            print(f"Using CSS file: {css_file}")
             
             # Update the CSS reference
             old_css = 'href="index.css"'
@@ -114,17 +112,17 @@ def update_html_css_reference():
             
             if old_css in content:
                 content = content.replace(old_css, new_css)
-                print(f"✅ Updated CSS reference to: {css_file}")
+                print(f"[OK] Updated CSS reference to: {css_file}")
             else:
-                print(f"⚠️  Could not find old CSS reference: {old_css}")
-                print(f"🔧 Adding new CSS reference...")
+                print(f"[WARN] Could not find old CSS reference: {old_css}")
+                print(f"Adding new CSS reference...")
                 # Add the CSS link before the closing head tag
                 content = content.replace('</head>', f'    <link rel="stylesheet" href="{css_file}">\n</head>')
         else:
-            print("❌ No CSS files found in dist directory")
+            print("[ERROR] No CSS files found in dist directory")
             return False
     else:
-        print("❌ dist directory not found")
+        print("[ERROR] dist directory not found")
         return False
     
     # Write the updated HTML
@@ -135,7 +133,7 @@ def update_html_css_reference():
     return True
 
 def main():
-    print("🚀 Fixing UI CSS Loading Issue")
+    print("Fixing UI CSS Loading Issue")
     print("=" * 60)
     
     # Step 1: Build the UI
@@ -145,24 +143,24 @@ def main():
     
     # Step 2: Update gateway to serve static files
     if not update_gateway_static_files():
-        print("❌ Failed to update gateway")
+        print("[ERROR] Failed to update gateway")
         return
     
     # Step 3: Update HTML CSS reference
     if not update_html_css_reference():
-        print("❌ Failed to update HTML")
+        print("[ERROR] Failed to update HTML")
         return
     
-    print("\n🎉 SUCCESS! CSS Issue Fixed")
+    print("\n[SUCCESS] CSS Issue Fixed")
     print("=" * 50)
     print("✅ UI built successfully")
-    print("✅ Gateway configured to serve static files")
+    print("[OK] Gateway configured to serve static files")
     print("✅ HTML updated with correct CSS reference")
-    print("\n🚀 Next steps:")
+    print("\nNext steps:")
     print("1. Restart the gateway: cd gateway && node index.js")
     print("2. Refresh your browser (Ctrl+F5 or Cmd+Shift+R)")
     print("3. The Analyze button should now work!")
-    print("\n🔍 The CSS error should be gone and buttons should be clickable!")
+    print("\nThe CSS error should be gone and buttons should be clickable!")
 
 if __name__ == "__main__":
     main()

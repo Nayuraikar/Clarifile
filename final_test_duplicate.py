@@ -16,33 +16,33 @@ def test_dedup_service():
         
         if response.status_code == 200:
             data = response.json()
-            print("✅ Dedup service is responding")
-            print(f"📊 Found {data.get('summary', {}).get('duplicate_groups_found', 0)} duplicate groups")
-            print(f"📁 Processed {data.get('summary', {}).get('total_files_processed', 0)} files")
+            print("[OK] Dedup service is responding")
+            print(f" Found {data.get('summary', {}).get('duplicate_groups_found', 0)} duplicate groups")
+            print(f" Processed {data.get('summary', {}).get('total_files_processed', 0)} files")
             
             # Show duplicate groups
             duplicates = data.get('duplicates', [])
             if duplicates:
-                print("\n🔍 Duplicate Groups:")
+                print("\n Duplicate Groups:")
                 for group in duplicates:
                     print(f"  Group {group['group_id']}: {group['file_count']} files")
                     for file_info in group['files'][:2]:  # Show first 2 files
                         print(f"    - {file_info['name']} (ID: {file_info['id']})")
             else:
-                print("ℹ️  No duplicates found")
+                print("[INFO]  No duplicates found")
                 
             return True
         else:
-            print(f"❌ Dedup service error: {response.status_code}")
+            print(f"[ERROR] Dedup service error: {response.status_code}")
             print(f"Response: {response.text}")
             return False
             
     except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to dedup service (port 8004)")
-        print("💡 Try starting it with: python -m uvicorn services.dedup.app:app --host 0.0.0.0 --port 8004")
+        print("[ERROR] Cannot connect to dedup service (port 8004)")
+        print("[TIP] Try starting it with: python -m uvicorn services.dedup.app:app --host 0.0.0.0 --port 8004")
         return False
     except Exception as e:
-        print(f"❌ Error testing dedup service: {e}")
+        print(f"[ERROR] Error testing dedup service: {e}")
         return False
 
 def test_gateway():
@@ -55,37 +55,37 @@ def test_gateway():
         
         if response.status_code == 200:
             data = response.json()
-            print("✅ Gateway is responding")
-            print(f"📊 Found {data.get('summary', {}).get('duplicate_groups_found', 0)} duplicate groups")
-            print(f"📁 Processed {data.get('summary', {}).get('total_files_processed', 0)} files")
+            print("[OK] Gateway is responding")
+            print(f" Found {data.get('summary', {}).get('duplicate_groups_found', 0)} duplicate groups")
+            print(f" Processed {data.get('summary', {}).get('total_files_processed', 0)} files")
             
             # Show duplicate groups
             duplicates = data.get('duplicates', [])
             if duplicates:
-                print("\n🔍 Duplicate Groups:")
+                print("\n Duplicate Groups:")
                 for group in duplicates:
                     print(f"  Group {group['group_id']}: {group['file_count']} files")
                     for file_info in group['files'][:2]:  # Show first 2 files
                         print(f"    - {file_info['name']} (ID: {file_info['id']})")
             else:
-                print("ℹ️  No duplicates found")
+                print("[INFO]  No duplicates found")
                 
             return True
         else:
-            print(f"❌ Gateway error: {response.status_code}")
+            print(f"[ERROR] Gateway error: {response.status_code}")
             print(f"Response: {response.text}")
             return False
             
     except requests.exceptions.ConnectionError:
-        print("❌ Cannot connect to gateway (port 4000)")
-        print("💡 Try starting it with: node gateway/index.js")
+        print("[ERROR] Cannot connect to gateway (port 4000)")
+        print("[TIP] Try starting it with: node gateway/index.js")
         return False
     except Exception as e:
-        print(f"❌ Error testing gateway: {e}")
+        print(f"[ERROR] Error testing gateway: {e}")
         return False
 
 if __name__ == "__main__":
-    print("🧪 Final Test - Duplicate Functionality After Schema Fixes")
+    print("Final Test - Duplicate Functionality After Schema Fixes")
     print("=" * 70)
     
     # Test dedup service directly
@@ -95,10 +95,10 @@ if __name__ == "__main__":
     gateway_ok = test_gateway()
     
     if dedup_ok and gateway_ok:
-        print("\n✅ All tests passed! Duplicate functionality should be working.")
-        print("\n🎉 Your duplicate checking feature is now fully functional!")
+        print("\n[OK] All tests passed! Duplicate functionality should be working.")
+        print("\n[SUCCESS] Your duplicate checking feature is now fully functional!")
     else:
-        print("\n❌ Some services are not responding. Make sure they're running.")
+        print("\n[ERROR] Some services are not responding. Make sure they're running.")
     
     print("\n" + "=" * 70)
-    print("✅ Test complete!")
+    print("[OK] Test complete!")

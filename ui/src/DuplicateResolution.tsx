@@ -86,7 +86,7 @@ const DuplicateResolution: React.FC<DuplicateResolutionProps> = ({
   return (
     <div className="duplicate-group-card fade-in" style={{animationDelay: `${groupIndex * 0.1}s`}}>
       <div className="duplicate-group-header">
-        <div className="duplicate-group-title">🔄 Duplicate Group {groupIndex + 1}</div>
+        <div className="duplicate-group-title"> Duplicate Group {groupIndex + 1}</div>
         <div className="duplicate-group-count">
           {group.file_count}
         </div>

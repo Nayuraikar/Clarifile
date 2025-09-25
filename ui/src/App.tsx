@@ -648,7 +648,7 @@ export default function App() {
               {/* Enhanced Document Proposals Section */}
               <div className="fade-in" style={{animationDelay: '0.8s'}}>
                 <div className="proposals-section-header">
-                  <h2 className="proposals-section-title">📄 Recent Document Proposals</h2>
+                  <h2 className="proposals-section-title">Recent Document Proposals</h2>
                   <Button tone='secondary' className="professional-button">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z" fill="currentColor"/>
@@ -926,7 +926,7 @@ export default function App() {
             <Section>
               <div className="fade-in">
                 <div className="duplicates-section-header">
-                  <h2 className="duplicates-section-title">🔄 Duplicate Files</h2>
+                  <h2 className="duplicates-section-title">Duplicate Files</h2>
                   <Button tone='secondary' onClick={refreshDups} disabled={isLoading('refreshDups')} loading={isLoading('refreshDups')} className="professional-button">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
@@ -971,7 +971,7 @@ export default function App() {
             <Section>
               <div className="fade-in">
                 <div className="categories-section-header">
-                  <h2 className="categories-section-title">📁 Categories</h2>
+                  <h2 className="categories-section-title">Categories</h2>
                   <Button tone='secondary' onClick={refreshCats} disabled={isLoading('refreshCats')} loading={isLoading('refreshCats')} className="professional-button">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
@@ -995,7 +995,7 @@ export default function App() {
                             <span>
                               Drive folder available · <a className="category-drive-link" href={`https://drive.google.com/drive/folders/${cat.folder_id}`} target="_blank" rel="noreferrer">Open in Drive</a>
                             </span>
-                          ) : (cat.missing_folder ? 'Folder missing in Drive' : `📂 Files categorized as ${cat.name}`)}
+                          ) : (cat.missing_folder ? 'Folder missing in Drive' : `Files categorized as ${cat.name}`)}
                         </div>
                         <div className="category-files">
                           <div className="file-list-section">
@@ -1186,7 +1186,7 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="quick-action-title">
-                    📄 Select a Document
+                    Select a Document
                   </h3>
                   <p className="quick-action-subtitle">
                     Choose a document to {currentQuickAction?.replace('_', ' ')}
@@ -1209,7 +1209,7 @@ export default function App() {
             <div className="quick-action-content">
               {driveProps.length === 0 ? (
                 <div className="documents-empty">
-                  <div className="documents-empty-icon">📄</div>
+                  <div className="documents-empty-icon"></div>
                   <p className="documents-empty-text">No documents available</p>
                 </div>
               ) : (

@@ -4,10 +4,10 @@ Debug CSS issues that might prevent button clicks
 """
 
 def check_button_css():
-    print("🔍 Checking for CSS Issues")
+    print("Checking for CSS Issues")
     print("=" * 50)
     
-    print("📋 Browser CSS Debug Instructions:")
+    print("Browser CSS Debug Instructions:")
     print("=" * 50)
     print("1. Open your browser")
     print("2. Go to your Clarifile app")
@@ -27,7 +27,7 @@ def check_button_css():
     print("   - What are the exact dimensions?")
     print("   - Is it being covered by another element?")
     
-    print("\n🧪 Quick CSS Test:")
+    print("\nQuick CSS Test:")
     print("=" * 50)
     print("Add this style to the button temporarily:")
     print("style={{")
@@ -37,12 +37,12 @@ def check_button_css():
     print("  position: 'relative !important'")
     print("}}")
     
-    print("\n🔍 If the red border appears, the button is being rendered")
-    print("🔍 If you still can't click it, there's a CSS overlay issue")
-    print("🔍 If the red border doesn't appear, the button isn't being rendered")
+    print("\n[INFO] If the red border appears, the button is being rendered")
+    print("[INFO] If you still can't click it, there's a CSS overlay issue")
+    print("[INFO] If the red border doesn't appear, the button isn't being rendered")
 
 def check_button_visibility():
-    print("\n👁️  Button Visibility Check:")
+    print("\nButton Visibility Check:")
     print("=" * 50)
     print("In browser console, run this command:")
     print("document.querySelectorAll('button').forEach(btn => {")
@@ -56,21 +56,21 @@ def check_button_visibility():
     print("});")
 
 def main():
-    print("🚀 Debug: Button Not Clickable - CSS Issues")
+    print("Debug: Button Not Clickable - CSS Issues")
     print("=" * 60)
     
     check_button_css()
     check_button_visibility()
     
-    print("\n📋 Debug Summary:")
+    print("\nDebug Summary:")
     print("=" * 50)
-    print("🎯 Most likely issues:")
+    print("Most likely issues:")
     print("1. Button is covered by another element (z-index)")
     print("2. Button has pointer-events: none")
     print("3. Button is hidden (opacity: 0 or visibility: hidden)")
     print("4. Parent element has overflow: hidden")
     print("5. Button is positioned off-screen")
-    print("\n🔧 Quick fixes to try:")
+    print("\nQuick fixes to try:")
     print("1. Add red border to see if button exists")
     print("2. Check browser console for 'RENDERING ANALYZE BUTTON' messages")
     print("3. Try clicking other buttons to see if they work")

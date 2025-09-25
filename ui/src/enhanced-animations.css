@@ -5137,7 +5137,7 @@ button:disabled svg,
 }
 
 .duplicate-group-count::before {
-  content: "⚠️";
+  content: "";
   font-size: 0.9rem;
 }
 
@@ -5244,7 +5244,7 @@ button:disabled svg,
 }
 
 .duplicate-file-size::before {
-  content: "📊";
+  content: "";
   font-size: 0.9rem;
 }
 

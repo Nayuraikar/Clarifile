@@ -144,7 +144,7 @@ document.getElementById('organize').addEventListener('click', async () => {
       const msg = (e1 && e1.message) ? e1.message : String(e1);
       if (!/bad client id/i.test(msg)) throw e1;
       
-      showStatus('🔐 Getting authorization...', 'info');
+      showStatus('Getting authorization...', 'info');
       token = await getTokenViaWebAuthFlow([
         'https://www.googleapis.com/auth/drive',
         'https://www.googleapis.com/auth/drive.file',
@@ -152,7 +152,7 @@ document.getElementById('organize').addEventListener('click', async () => {
       ]);
     }
     
-    showStatus('📂 Fetching Drive files...', 'info');
+    showStatus('Fetching Drive files...', 'info');
     const files = await listDriveFiles(token);
     
     if (files.length === 0) {
@@ -161,7 +161,7 @@ document.getElementById('organize').addEventListener('click', async () => {
       return;
     }
     
-    showStatus(`🤖 Analyzing ${files.length} files with AI...`, 'info');
+    showStatus(`Analyzing ${files.length} files with AI...`, 'info');
     const res = await fetch('http://127.0.0.1:4000/drive/organize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
