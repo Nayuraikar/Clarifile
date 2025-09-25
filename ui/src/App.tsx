@@ -76,6 +76,7 @@ export default function App() {
   const [quickActionLoading, setQuickActionLoading] = useState(false)
   const [duplicateResolution, setDuplicateResolution] = useState<{ [key: string]: boolean }>({})
   const [duplicateResolutionLoading, setDuplicateResolutionLoading] = useState(false)
+  const [viewAllProposals, setViewAllProposals] = useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
   // Helper function to set loading state for specific operations
@@ -83,26 +84,62 @@ export default function App() {
     setLoadingStates(prev => ({ ...prev, [operation]: loading }))
   }
 
-  // Helper function to check if an operation is loading
   const isLoading = (operation: string) => loadingStates[operation] || false
 
   // Ensure a chat exists for a given file and select it
   const ensureChatForFile = (file: DriveProposal) => {
     setChats(prev => {
-      if (prev[file.id]) return prev
-      return { ...prev, [file.id]: { file, messages: [] } }
-    })
-    setSelectedChatId(file.id)
-    setDriveAnalyzedId(file.id)
+      if (prev[file.id]) {
+        // If chat exists, make sure file info is up to date
+        if (prev[file.id].file.name !== file.name || prev[file.id].file.proposed_category !== file.proposed_category) {
+          return {
+            ...prev,
+            [file.id]: {
+              ...prev[file.id],
+              file: { ...file }
+            }
+          };
+        }
+        return prev;
+      }
+      // Create new chat if it doesn't exist
+      return { 
+        ...prev, 
+        [file.id]: { 
+          file: { ...file },
+          messages: [] 
+        } 
+      };
+    });
+    setSelectedChatId(file.id);
+    setDriveAnalyzedId(file.id);
+    return file.id;
   }
 
   // Append a message to a specific chat
   const appendToChat = (chatId: string, message: { role: 'user'|'assistant', content: string }) => {
     setChats(prev => {
-      const chat = prev[chatId]
-      if (!chat) return prev
-      return { ...prev, [chatId]: { ...chat, messages: [...chat.messages, message] } }
-    })
+      const chat = prev[chatId];
+      if (!chat) return prev;
+      
+      const updatedChat = {
+        ...chat,
+        messages: [...chat.messages, message]
+      };
+      
+      // If this is a new message from the assistant, make sure the chat is selected
+      if (message.role === 'assistant') {
+        setSelectedChatId(chatId);
+        setDriveAnalyzedId(chatId);
+        
+        // If we're not already on the AI Assistant tab, switch to it
+        if (tab !== 'ai') {
+          setTab('ai');
+        }
+      }
+      
+      return { ...prev, [chatId]: updatedChat };
+    });
   }
 
   async function refreshDrive() {
@@ -421,10 +458,37 @@ export default function App() {
         role: 'assistant' as const,
         content: messageContent
       };
-      setMessages(prev => [...prev, resultMessage]);
       
-      setNotification(`${action.replace('_', ' ')} completed successfully!`)
-      setQuickActionLoading(false)
+      // Ensure we have a chat for this file
+      ensureChatForFile(file);
+      
+      // Update the messages in the chat
+      setChats(prev => {
+        const updatedChats = {
+          ...prev,
+          [file.id]: {
+            ...prev[file.id],
+            file: file, // Make sure file info is up to date
+            messages: [...(prev[file.id]?.messages || []), resultMessage]
+          }
+        };
+        
+        // Make sure this chat is selected
+        setSelectedChatId(file.id);
+        
+        // If we're not already on the AI Assistant tab, switch to it
+        if (tab !== 'ai') {
+          setTab('ai');
+        }
+        
+        return updatedChats;
+      });
+      
+      // Set the drive analyzed ID to trigger any necessary effects
+      setDriveAnalyzedId(file.id);
+      
+      setNotification(`${action.replace('_', ' ')} completed successfully!`);
+      setQuickActionLoading(false);
     }, 1000) // Small delay to show loading state
   }
 
@@ -648,18 +712,26 @@ export default function App() {
               {/* Enhanced Document Proposals Section */}
               <div className="fade-in" style={{animationDelay: '0.8s'}}>
                 <div className="proposals-section-header">
-                  <h2 className="proposals-section-title">Recent Document Proposals</h2>
-                  <Button tone='secondary' className="professional-button">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z" fill="currentColor"/>
-                    </svg>
-                    View All
-                  </Button>
+                  <h2 className="proposals-section-title">
+                    {viewAllProposals ? 'All Document Proposals' : 'Recent Document Proposals'}
+                  </h2>
+                  {driveProps.length > 0 && (
+                    <Button 
+                      tone='secondary' 
+                      className="professional-button"
+                      onClick={() => setViewAllProposals(!viewAllProposals)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z" fill="currentColor"/>
+                      </svg>
+                      {viewAllProposals ? 'View Less' : `View All (${driveProps.length})`}
+                    </Button>
+                  )}
                 </div>
                 
                 {driveProps.length > 0 ? (
                   <div className="proposals-grid">
-                    {driveProps.slice(0, 4).map((p, index) => (
+                    {driveProps.slice(0, viewAllProposals ? driveProps.length : 4).map((p, index) => (
                       <div key={p.id} className="document-proposal-card fade-in" style={{animationDelay: `${0.9 + index * 0.1}s`}}>
                         <div className="proposal-header">
                           <div className="proposal-info">
@@ -832,13 +904,17 @@ export default function App() {
                                 setNotification('File analyzed successfully!');
                                 
                                 // Ensure chat exists and append analysis to that chat
-                                ensureChatForFile(file)
+                                ensureChatForFile(file);
+                                
+                                // Switch to AI Assistant tab
+                                setTab('ai');
+                                
                                 if (response.summary) {
                                   appendToChat(file.id, {
                                     role: 'assistant',
                                     content: `I've analyzed the file "${file.name}". Here's what I found:\n\n**Summary:** ${response.summary}\n**Category:** ${response.category || 'General'}\n**Tags:** ${response.tags?.join(', ') || 'None'}\n\nYou can now ask me questions about this file!`
-                                  })
-                                  console.log('Added analysis to AI Assistant chat')
+                                  });
+                                  console.log('Added analysis to AI Assistant chat');
                                 }
                                 
                                 setLoading('analyzeFile', false);
@@ -1098,8 +1174,8 @@ export default function App() {
                                 <p className="chat-empty-text">Select a chat or analyze a file to begin</p>
                               </div>
                             ) : (
-                              <div>
-                                {chats[selectedChatId].messages.map((msg, index) => (
+                              <div className="chat-messages-container">
+                                {chats[selectedChatId].messages.filter(m => m.content !== '::typing::').map((msg, index) => (
                                   <div key={index} className="message-wrapper">
                                     {msg.role === 'user' ? (
                                       <div className="user-message-container">
