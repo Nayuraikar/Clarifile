@@ -1,8 +1,9 @@
 # parser/app.py
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from fastapi import Query
-import os, sqlite3, hashlib, shutil, json, re, subprocess, tempfile
+from typing import Optional
+import os, sqlite3, hashlib, shutil, json, re, subprocess, tempfile, collections
 from PIL import Image
 import fitz  # PyMuPDF
 import numpy as np
@@ -15,13 +16,10 @@ import torchvision.transforms as transforms
 from torchvision import models
 import whisper
 import cv2
-from services.parser import nlp
-import collections
-from typing import Optional
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from services.parser import nlp
-from pydantic import BaseModel
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from nlp import *
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
@@ -543,11 +541,13 @@ def process_video_ffmpeg(path):
 def summarize_text(long_text: str) -> str:
     if not long_text.strip():
         return ""
+
     try:
         return nlp.summarize_with_gemini(long_text, max_tokens=512)
     except Exception as e:
-        print("Gemini summarization error:", e)
-        return long_text[:500]  # fallback
+        print(f"Gemini summarization error: {e}")
+        # Fallback: return a simple excerpt
+        return long_text[:500] + "..." if len(long_text) > 500 else long_text
 
 # --- Category assignment ---
 def compress_title(summary: str) -> str:
@@ -558,232 +558,331 @@ def compress_title(summary: str) -> str:
     if "personal" in lower: return "Personal"
     return summary.split(" ")[0:3][0]
 
-def assign_category_from_summary(summary: str, threshold: float = 0.75):
-    if not summary.strip():
+def assign_category_from_summary(summary: str, full_text: str = "", threshold: float = 0.75):
+    """
+    Assign a category to a file based on its content.
+    Uses the enhanced classification system with detailed categories.
+    Prioritizes full text when available, falls back to summary.
+    """
+    content_to_analyze = full_text.strip() or summary.strip()
+    if not content_to_analyze:
         return None, "Uncategorized"
+
     try:
-        category_name = nlp.classify_with_gemini(summary)
+        # Get the detailed category from our enhanced classifier
+        category_name = nlp.classify_with_gemini(content_to_analyze)
+        print(f"Classification result: {category_name}")
+
+        # Clean up the category name
+        category_name = category_name.strip()
+        
+        # Ensure we have a valid category name
+        if not category_name or len(category_name) < 2:
+            category_name = "Uncategorized"
+            
+        # Clean up the category name (remove any non-alphanumeric characters except spaces, colons, and hyphens)
+        category_name = re.sub(r'[^\w\s:-]', '', category_name).strip()
+        
+        # Ensure we have a valid format (Category: Subcategory)
+        if ':' not in category_name:
+            # If it's a single word, add a default subcategory
+            if ' ' not in category_name:
+                category_name = f"{category_name}: General"
+            else:
+                # Otherwise, split on first space
+                parts = category_name.split(' ', 1)
+                category_name = f"{parts[0]}: {parts[1]}"
+        
+        # Extract main category (everything before first colon)
+        main_category = category_name.split(':', 1)[0].strip()
+        
+        # Ensure main category is not empty
+        if not main_category:
+            main_category = "Uncategorized"
+            category_name = "Uncategorized: General"
+            
+        print(f"Final category assignment: '{category_name}' (Main: '{main_category}')")
+
+        # Insert or get the category from the database
         cur = conn.cursor()
-        # Insert category if not exists
-        cur.execute("INSERT OR IGNORE INTO categories(name, rep_summary, rep_vector) VALUES (?,?,?)",
-                    (category_name, summary, "[]"))
+        rep_content = full_text[:500] if full_text else summary[:500]  # Store first 500 chars as representative
+        
+        # First ensure the main category exists
+        cur.execute(
+            "INSERT OR IGNORE INTO categories(name, rep_summary, rep_vector) VALUES (?,?,?)",
+            (main_category, rep_content, "[]")
+        )
+        
+        # Then ensure the full category path exists
+        if category_name != main_category:
+            cur.execute(
+                "INSERT OR IGNORE INTO categories(name, rep_summary, rep_vector) VALUES (?,?,?)",
+                (category_name, rep_content, "[]")
+            )
+            
         conn.commit()
+
+        # Try to get the full category path first
         cur.execute("SELECT id FROM categories WHERE name=?", (category_name,))
         row = cur.fetchone()
-        return (row[0] if row else None), category_name
+        
+        # If we didn't find the full path, fall back to main category
+        if not row:
+            cur.execute("SELECT id FROM categories WHERE name=?", (main_category,))
+            row = cur.fetchone()
+            category_name = main_category  # Fall back to main category
+
+        print(f"Database lookup - ID: {row[0] if row else 'None'}, Category: '{category_name}'")
+        
+        # Return the category ID and the full category path
+        return (row[0] if row else None), full_category
+
     except Exception as e:
-        print("Gemini category error:", e)
-        return None, "Uncategorized"
+        print(f"Category classification error: {e}")
+        # Fallback to extension-based categorization
+        if full_text:
+            fallback = infer_category_from_extension("unknown", "text/plain")
+        else:
+            fallback = "Uncategorized"
+        return None, fallback
     
 # --- API ---
 @app.post("/scan_folder")
-def scan_folder():
-    print("=== Starting scan_folder() endpoint ===")
-    try:
-        # Check if sample directory exists
-        print(f"Checking if sample directory exists: {SAMPLE_DIR}")
-        if not os.path.exists(SAMPLE_DIR):
-            print(f"ERROR: Sample directory {SAMPLE_DIR} does not exist")
-            raise HTTPException(status_code=404, detail=f"Sample directory {SAMPLE_DIR} does not exist")
-        
-        print(f"Sample directory exists. Listing files...")
-        files_in_dir = os.listdir(SAMPLE_DIR)
-        print(f"Found {len(files_in_dir)} items in directory: {files_in_dir}")
-        
-        inserted_files_with_chunks = 0
-        processed_files = []
-        
-        for fname in files_in_dir:
-            try:
-                print(f"\n--- Processing file: {fname} ---")
-                path = os.path.join(SAMPLE_DIR, fname)
-                
-                if not os.path.isfile(path):
-                    print(f"Skipping {fname} - not a file")
-                    continue
-                    
-                ext = os.path.splitext(path)[1].lower()
-                print(f"File extension: {ext}")
-                
-                if ext not in ALLOWED_EXTS:
-                    print(f"Skipping {fname} - extension {ext} not in allowed extensions: {ALLOWED_EXTS}")
-                    continue
+def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
+    print("=== Starting COMPREHENSIVE AI scan_folder() endpoint ===")
+    import threading
+    import time
 
-                print(f"Computing file hash for {fname}...")
+    result = {"status": "error", "message": "Unknown error", "processed_files": []}
+    exception = None
+
+    def scan_worker():
+        nonlocal result, exception
+        try:
+            # Check if sample directory exists
+            print(f"Checking if sample directory exists: {SAMPLE_DIR}")
+            if not os.path.exists(SAMPLE_DIR):
+                print(f"ERROR: Sample directory {SAMPLE_DIR} does not exist")
+                result = {"status": "error", "message": f"Sample directory {SAMPLE_DIR} does not exist", "processed_files": []}
+                return
+
+            print(f"Sample directory exists. Listing files...")
+            files_in_dir = os.listdir(SAMPLE_DIR)
+            print(f"Found {len(files_in_dir)} items in directory: {files_in_dir}")
+
+            inserted_files_with_chunks = 0
+            processed_files = []
+
+            for fname in files_in_dir:
                 try:
-                    fh = file_hash(path)
-                    size = os.path.getsize(path)
-                    print(f"File hash: {fh[:16]}..., Size: {size} bytes")
-                except Exception as hash_error:
-                    print(f"ERROR computing hash for {fname}: {hash_error}")
-                    continue
-                
-                print(f"Inserting file record into database...")
-                cur = conn.cursor()
-                try:
-                    cur.execute("""INSERT OR IGNORE INTO files
-                                       (file_path,file_name,file_hash,size,status,proposed_label)
-                                       VALUES (?,?,?,?,?,?)""",
-                                    (path, fname, fh, size, "new", "Uncategorized"))
-                    conn.commit()
-                    print(f"File record inserted/exists for {fname}")
-                except Exception as db_error:
-                    print(f"ERROR inserting file record for {fname}: {db_error}")
-                    continue
-                
-                cur.execute("SELECT id FROM files WHERE file_hash=?", (fh,))
-                row = cur.fetchone()
-                if not row:
-                    print(f"ERROR: Could not retrieve file_id for {fname}")
-                    continue
-                file_id = row[0]
-                print(f"File ID: {file_id}")
+                    print(f"\n--- Processing file: {fname} ---")
+                    path = os.path.join(SAMPLE_DIR, fname)
 
-                text, summary, transcript, tags = "", "", "", []
+                    if not os.path.isfile(path):
+                        print(f"Skipping {fname} - not a file")
+                        continue
 
-                print(f"Processing content based on file type: {ext}")
-                
-                if ext == ".txt":
-                    print("Processing as text file...")
-                    try:
-                        text = read_text_file(path)
-                        print(f"Extracted {len(text)} characters from text file")
-                    except Exception as txt_error:
-                        print(f"ERROR reading text file {fname}: {txt_error}")
-                        
-                elif ext == ".pdf":
-                    print("Processing as PDF file...")
-                    try:
-                        text = extract_text_from_pdf(path)
-                        print(f"Extracted {len(text)} characters from PDF")
-                    except Exception as pdf_error:
-                        print(f"ERROR extracting text from PDF {fname}: {pdf_error}")
-                        
-                elif ext in {".png", ".jpg", ".jpeg"}:
-                    print("Processing as image file...")
-                    try:
-                        text = extract_text_from_image(path)
-                        print(f"Extracted {len(text)} characters via OCR")
-                        classification = classify_image(path)
-                        tags.append(classification)
-                        print(f"Image classification: {classification}")
-                    except Exception as img_error:
-                        print(f"ERROR processing image {fname}: {img_error}")
-                        
-                elif ext in {".mp3", ".wav"}:
-                    print("Processing as audio file...")
-                    try:
-                        transcript = transcribe_audio(path)
-                        text = transcript
-                        print(f"Audio transcription: {len(transcript)} characters")
-                    except Exception as audio_error:
-                        print(f"ERROR transcribing audio {fname}: {audio_error}")
-                        
-                elif ext in {".mp4", ".mkv", ".mpeg"}:
-                    print("Processing as video file...")
-                    try:
-                        transcript, frame_tags = process_video_ffmpeg(path)
-                        text = transcript + " " + " ".join(frame_tags)
-                        tags.extend(frame_tags)
-                        print(f"Video processing: {len(transcript)} transcript chars, {len(frame_tags)} frame tags")
-                    except Exception as video_error:
-                        print(f"ERROR processing video {fname}: {video_error}")
+                    ext = os.path.splitext(path)[1].lower()
+                    print(f"File extension: {ext}")
 
-                print(f"Updating file with extracted text ({len(text or '')} chars)...")
-                try:
-                    cur.execute("UPDATE files SET full_text=? WHERE id=?", (text or "", file_id))
-                    conn.commit()
-                    print("Full text updated in database")
-                except Exception as update_error:
-                    print(f"ERROR updating full_text for {fname}: {update_error}")
-                
-                print("Extracting entities...")
-                try:
-                    entity_result = extract_and_store_entities(conn, file_id, text or "")
-                    print(f"Entities extracted: {entity_result}")
-                except Exception as entity_error:
-                    print(f"ERROR extracting entities for {fname}: {entity_error}")
+                    if ext not in ALLOWED_EXTS:
+                        print(f"Skipping {fname} - extension {ext} not in allowed extensions: {ALLOWED_EXTS}")
+                        continue
 
-                if text and text.strip():
-                    print("Creating text chunks...")
+                    print(f"Computing file hash for {fname}...")
                     try:
-                        chunks = chunk_text(text)
-                        print(f"Created {len(chunks)} chunks")
-                        
-                        for i, (s, e, chunk) in enumerate(chunks):
-                            chash = hashlib.sha256((str(file_id)+str(s)+str(e)).encode()).hexdigest()
-                            cur.execute("""INSERT OR IGNORE INTO chunks
-                                        (file_id,chunk_text,chunk_hash,start_offset,end_offset)
-                                        VALUES (?,?,?,?,?)""",
-                                        (file_id, chunk, chash, s, e))
-                            if i == 0:  # Log first chunk as example
-                                print(f"First chunk: {chunk[:100]}...")
-                        
+                        fh = file_hash(path)
+                        size = os.path.getsize(path)
+                        print(f"File hash: {fh[:16]}..., Size: {size} bytes")
+                    except Exception as hash_error:
+                        print(f"ERROR computing hash for {fname}: {hash_error}")
+                        continue
+
+                    print(f"Inserting file record into database...")
+                    cur = conn.cursor()
+                    try:
+                        cur.execute("""INSERT OR IGNORE INTO files
+                                           (file_path,file_name,file_hash,size,status,proposed_label)
+                                           VALUES (?,?,?,?,?,?)""",
+                                        (path, fname, fh, size, "new", "Uncategorized"))
                         conn.commit()
-                        inserted_files_with_chunks += 1
-                        print("Chunks inserted successfully")
-                    except Exception as chunk_error:
-                        print(f"ERROR creating chunks for {fname}: {chunk_error}")
+                        print(f"File record inserted/exists for {fname}")
+                    except Exception as db_error:
+                        print(f"ERROR inserting file record for {fname}: {db_error}")
+                        continue
 
-                    print("Generating summary...")
-                    try:
-                        summary = summarize_text(text)
-                        print(f"Summary generated: {len(summary)} characters")
-                    except Exception as summary_error:
-                        print(f"ERROR generating summary for {fname}: {summary_error}")
-                        summary = ""
-                    
-                    print("Assigning category...")
-                    try:
-                        cat_id, cat_name = assign_category_from_summary(summary)
-                        print(f"Category assigned: {cat_name} (ID: {cat_id})")
-                    except Exception as cat_error:
-                        print(f"ERROR assigning category for {fname}: {cat_error}")
-                        cat_id, cat_name = None, "Uncategorized"
-                else:
-                    print("No text content - skipping summary/categorization")
-                    cat_id, cat_name, summary = None, "Uncategorized", ""
+                    cur.execute("SELECT id FROM files WHERE file_hash=?", (fh,))
+                    row = cur.fetchone()
+                    if not row:
+                        print(f"ERROR: Could not retrieve file_id for {fname}")
+                        continue
+                    file_id = row[0]
+                    print(f"File ID: {file_id}")
 
-                print("Updating file with final metadata...")
-                try:
-                    cur.execute("""UPDATE files
-                                   SET summary=?, proposed_label=?, category_id=?, transcript=?, tags=?
-                                   WHERE id=?""",
-                                (summary, cat_name, cat_id, transcript, json.dumps(tags), file_id))
-                    conn.commit()
-                    print("File metadata updated successfully")
-                except Exception as final_update_error:
-                    print(f"ERROR in final update for {fname}: {final_update_error}")
-                
-                processed_files.append({
-                    "file": fname,
-                    "category": cat_name,
-                    "summary": summary[:120] if summary else "",
-                    "transcript_len": len(transcript),
-                    "tags": tags
-                })
-                
-                print(f" Successfully processed {fname}")
-                
-            except Exception as file_error:
-                print(f" ERROR processing file {fname}:")
-                import traceback
-                print(traceback.format_exc())
-                # Continue with next file instead of failing completely
-                continue
-        
-        print(f"\n=== Scan Complete ===")
-        print(f"Files with chunks: {inserted_files_with_chunks}")
-        print(f"Total processed files: {len(processed_files)}")
-        
-        return {"status": "scanned", "chunks_inserted": inserted_files_with_chunks,
-                "processed_files": processed_files}
-                
-    except Exception as e:
-        print(f"\n FATAL ERROR in scan_folder():")
-        import traceback
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
+                    # COMPREHENSIVE ANALYSIS - extract text and use AI for categorization
+                    text = ""
+                    category_name = "General"
+                    summary = ""
+
+                    try:
+                        # Extract text based on file type
+                        if ext == ".txt":
+                            text = read_text_file(path)
+                            print(f"Extracted {len(text)} characters from text file")
+                        elif ext == ".pdf":
+                            text = extract_text_from_pdf(path)
+                            print(f"Extracted {len(text)} characters from PDF")
+                        elif ext in {".png", ".jpg", ".jpeg"}:
+                            text = extract_text_from_image(path)
+                            print(f"Extracted {len(text)} characters from image OCR")
+                            # Also get image classification
+                            tags = [classify_image(path)]
+                        elif ext in {".mp3", ".wav"}:
+                            transcript = transcribe_audio(path)
+                            text = transcript
+                            print(f"Transcribed {len(transcript)} characters from audio")
+                        else:
+                            # Try reading as text for other formats
+                            text = read_text_file(path)
+                            print(f"Extracted {len(text)} characters from file")
+
+                        # Generate summary using AI
+                        if text.strip():
+                            summary = summarize_text(text)
+                            print(f"Generated summary: {len(summary)} characters")
+
+                            # Use AI to categorize based on content
+                            try:
+                                cat_id, category_name = assign_category_from_summary(summary, text)
+                                print(f"AI categorized as: {category_name} (ID: {cat_id})")
+                                
+                                # If we got a category ID, use it; otherwise, fall back to name lookup
+                                if not cat_id and category_name:
+                                    cur.execute("SELECT id FROM categories WHERE name=?", (category_name,))
+                                    cat_row = cur.fetchone()
+                                    if cat_row:
+                                        cat_id = cat_row[0]
+                                        print(f"Found category ID {cat_id} for name '{category_name}'")
+                                
+                                # Extract and store entities if we have text
+                                if len(text) > 100:  # Only for substantial content
+                                    entity_info = extract_and_store_entities(conn, file_id, text)
+                                    print(f"Extracted {entity_info['unique']} unique entities")
+                                    
+                            except Exception as cat_error:
+                                print(f"Error in category assignment: {cat_error}")
+                                # Fall back to extension-based categorization
+                                category_name = infer_category_from_extension(fname, None)
+                                print(f"Fallback categorization: {category_name}")
+                                cat_id = None
+                        
+                        # If no text was extracted or category assignment failed, fall back to extension-based categorization
+                        if not text.strip() or not category_name or category_name == "Uncategorized":
+                            category_name = infer_category_from_extension(fname, None)
+                            print(f"Fallback categorization: {category_name}")
+                            cat_id = None
+
+                    except Exception as content_error:
+                        print(f"ERROR in content analysis for {fname}: {content_error}")
+                        # Fallback to extension-based categorization
+                        category_name = infer_category_from_extension(fname, None)
+                        print(f"Fallback categorization: {category_name}")
+
+                    # Update file with comprehensive analysis results
+                    try:
+                        # If we don't have a category name at this point, try to get one from the filename
+                        if not category_name or category_name == "Uncategorized":
+                            category_name = infer_category_from_extension(fname, None)
+                            print(f"Using filename-based category: {category_name}")
+                            
+                            # If we still don't have a category, use a default
+                            if not category_name or category_name == "Uncategorized":
+                                category_name = "Documents"
+                                
+                        # If we don't have a category ID but have a name, try to look it up
+                        if not cat_id and category_name:
+                            cur.execute("SELECT id FROM categories WHERE name=?", (category_name,))
+                            cat_row = cur.fetchone()
+                            if cat_row:
+                                cat_id = cat_row[0]
+                                print(f"Found category ID {cat_id} for name '{category_name}'")
+                            else:
+                                # If category doesn't exist, create it
+                                cur.execute(
+                                    "INSERT INTO categories(name, rep_summary, rep_vector) VALUES (?,?,?)",
+                                    (category_name, summary[:500] if summary else "", "[]")
+                                )
+                                cat_id = cur.lastrowid
+                                print(f"Created new category: {category_name} (ID: {cat_id})")
+                        
+                        # Debug output
+                        print(f"Final category before DB update - Name: '{category_name}', ID: {cat_id}")
+                        
+                        # Update the file record with the analysis results
+                        cur.execute("""UPDATE files
+                                       SET summary=?, proposed_label=?, category_id=?, full_text=?, tags=?
+                                       WHERE id=?""",
+                                    (summary, 
+                                     category_name,  # Store the full category path
+                                     cat_id, 
+                                     text[:2000], 
+                                     json.dumps(tags) if 'tags' in locals() else "[]", 
+                                     file_id))
+                        conn.commit()
+                        print(f"File metadata updated successfully with AI analysis. Category: {category_name}")
+                        
+                        # Verify the update
+                        cur.execute("SELECT proposed_label, category_id FROM files WHERE id=?", (file_id,))
+                        updated = cur.fetchone()
+                        if updated:
+                            print(f"Verification - Stored category: {updated[0]}, Category ID: {updated[1]}")
+                        else:
+                            print("Warning: Could not verify category update in database")
+                    except Exception as final_update_error:
+                        print(f"ERROR in final update for {fname}: {final_update_error}")
+
+                    processed_files.append({
+                        "file": fname,
+                        "category": category_name,
+                        "summary": summary[:200] + "..." if len(summary) > 200 else summary,  # Truncate for display
+                        "transcript_len": len(text) if text else 0,
+                        "tags": tags if 'tags' in locals() else []
+                    })
+
+                    print(f"✅ Successfully processed {fname}")
+
+                except Exception as file_error:
+                    print(f"❌ ERROR processing file {fname}: {file_error}")
+                    continue
+
+            print(f"\n=== COMPREHENSIVE AI SCAN COMPLETE ===")
+            print(f"Files processed: {len(processed_files)}")
+
+            result = {"status": "scanned", "chunks_inserted": 0,
+                    "processed_files": processed_files}
+
+        except Exception as e:
+            print(f"\n❌ FATAL ERROR in scan_folder(): {e}")
+            import traceback
+            traceback.print_exc()
+            exception = e
+            result = {"status": "error", "message": f"Scan failed: {str(e)}", "processed_files": []}
+
+    # Start the scan in a separate thread
+    scan_thread = threading.Thread(target=scan_worker)
+    scan_thread.daemon = True
+    scan_thread.start()
+
+    # Wait for completion with timeout
+    scan_thread.join(timeout=timeout)
+
+    if scan_thread.is_alive():
+        print(f"Scan operation timed out after {timeout} seconds")
+        return {"status": "timeout", "message": f"Scan operation timed out after {timeout} seconds", "processed_files": []}
+    elif exception:
+        raise HTTPException(status_code=500, detail=str(exception))
+    else:
+        return result
 
 @app.get("/list_proposals")
 def list_proposals():
@@ -1116,23 +1215,28 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
     drive_service = None
     if req.move and req.auth_token:
         drive_service = get_drive_service(req.auth_token)
-    fast_mode = True  # speed-first categorization to avoid LLM rate/latency
+
+    # Skip complex AI analysis - use simple categorization only
     for f in req.files:
         # Skip folders entirely
         if (f.mimeType or "").strip() == 'application/vnd.google-apps.folder':
             continue
+
         file_name = f.name or ""
-        # Use Gemini to classify based on filename and mimeType when no text available
+
+        # Simple categorization based on filename and mimeType
         try:
             if req.override_category:
                 category_name = req.override_category
                 category_id = None
             else:
-                # FAST: choose by extension/mime; skip LLM to reduce latency and 429s
-                fallback = infer_category_from_extension(file_name, f.mimeType)
-                category_id, category_name = None, fallback
-        except Exception:
-            category_id, category_name = None, infer_category_from_extension(file_name, f.mimeType)
+                # Use simple extension-based categorization (no downloads, no AI)
+                category_name = infer_category_from_extension(f.name, f.mimeType)
+                category_id = None
+
+        except Exception as e:
+            print(f"Error categorizing file {f.name}: {e}")
+            category_id, category_name = None, infer_category_from_extension(f.name, f.mimeType)
 
         target_folder_id = None
         if req.move and drive_service:
@@ -1149,8 +1253,10 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
             "category_id": category_id,
             "target_folder_id": target_folder_id,
             "mimeType": f.mimeType,
-            "parents": f.parents or []
+            "parents": f.parents or [],
+            "summary": ""  # No summary for simple mode
         })
+
     return {"organized_files": organized, "move_performed": move_performed}
 
 

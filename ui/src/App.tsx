@@ -12,6 +12,12 @@ async function call(path: string, opts?: RequestInit) {
 
 // Helper to extract the proposed category from a proposal regardless of field name variations
 function getProposalCategory(p: any): string {
+  // First check if we have a direct proposed_label (from backend)
+  if (p?.proposed_label && typeof p.proposed_label === 'string' && p.proposed_label.trim().length > 0) {
+    return p.proposed_label.trim();
+  }
+  
+  // Fallback to other possible fields
   const candidates = [
     p?.proposed_category,
     p?.proposed,
@@ -20,10 +26,14 @@ function getProposalCategory(p: any): string {
     p?.folder,
     p?.target_folder,
   ];
+  
+  // Return the first non-empty candidate
   for (const c of candidates) {
     if (typeof c === 'string' && c.trim().length > 0) return c.trim();
   }
-  return '';
+  
+  // Default fallback
+  return 'Uncategorized';
 }
 
 type Proposal = { id: number; file: string; proposed: string; final?: string }
@@ -177,25 +187,26 @@ export default function App() {
       // Keep local state in sync (optional, useful elsewhere in UI)
       setDriveProps(proposals)
 
-      // Prefer Drive categories which include actual Drive folders and counts
-      let c = await call('/drive/categories')
-      if (!Array.isArray(c) || c.length===0) c = await call('/categories')
-      const items = Array.isArray(c) ? c : []
-      // Normalize to { name, folder_id?, count, missing_folder? }
-      const baseCats = items.map((x:any) => {
-        if (typeof x === 'string') {
-          const key = String(x).trim().toLowerCase()
-          const count = proposals.filter(file => {
-            const cat = getProposalCategory(file).toLowerCase()
-            return cat === key
-          }).length
-          return { name: x, count }
-        }
-        const name = x?.name || 'Other'
-        const key = String(name).trim().toLowerCase()
-        const count = typeof x?.drive_file_count === 'number' ? x.drive_file_count : proposals.filter(file => getProposalCategory(file).toLowerCase() === key).length
-        return { name, count, folder_id: x?.folder_id || null, missing_folder: !!x?.missing_folder }
+      // If no proposals yet, return empty categories
+      if (proposals.length === 0) {
+        setCats([])
+        return
+      }
+
+      // Extract unique categories from proposals
+      const categoryMap = new Map<string, number>()
+      proposals.forEach(file => {
+        const category = getProposalCategory(file) || 'Uncategorized'
+        categoryMap.set(category, (categoryMap.get(category) || 0) + 1)
       })
+
+      // Convert to array of categories with counts
+      const baseCats = Array.from(categoryMap.entries()).map(([name, count]) => ({
+        name,
+        count,
+        folder_id: null,
+        missing_folder: false
+      }))
 
       // Fetch existing files in each Drive folder (if folder_id present)
       const categoriesWithFiles = await Promise.all(baseCats.map(async (cat:any) => {

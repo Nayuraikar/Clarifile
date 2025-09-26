@@ -1,25 +1,35 @@
 const out = document.getElementById('out');
-const statusContainer = document.getElementById('status-container');
-
 function showStatus(message, type = 'info') {
-  statusContainer.innerHTML = `
-    <div class="status ${type}">
-      <svg class="icon" viewBox="0 0 24 24">
-        ${type === 'success' ? 
-          '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>' :
-          type === 'error' ? 
-          '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm3.5 6L12 10.5 8.5 8 7 9.5 10.5 12 7 14.5 8.5 16 12 13.5 15.5 16 17 14.5 13.5 12 17 9.5 15.5 8z"/>' :
-          '<path d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>'
-        }
-      </svg>
-      ${message}
-    </div>
+  const container = document.getElementById('status-container');
+  container.innerHTML = '';
+
+  const statusDiv = document.createElement('div');
+  statusDiv.className = `status ${type}`;
+
+  let icon = '';
+  let loadingSpinner = '';
+
+  if (type === 'success') {
+    icon = '✅';
+  } else if (type === 'error') {
+    icon = '❌';
+  } else if (type === 'info') {
+    icon = 'ℹ️';
+    loadingSpinner = '<span class="loading-dots"><span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span></span>';
+  }
+
+  statusDiv.innerHTML = `
+    <span>${icon}</span>
+    <span>${message}</span>
+    ${loadingSpinner}
   `;
-  
+
+  container.appendChild(statusDiv);
+
   // Auto-hide after 5 seconds for success/error messages
   if (type !== 'info') {
     setTimeout(() => {
-      statusContainer.innerHTML = '';
+      container.innerHTML = '';
     }, 5000);
   }
 }
@@ -135,7 +145,7 @@ document.getElementById('organize').addEventListener('click', async () => {
   setButtonState('organize', true, ' Organizing...');
   showStatus('Scanning your Drive files...', 'info');
   out.textContent = '';
-  
+
   try {
     let token;
     try {
@@ -143,7 +153,7 @@ document.getElementById('organize').addEventListener('click', async () => {
     } catch (e1) {
       const msg = (e1 && e1.message) ? e1.message : String(e1);
       if (!/bad client id/i.test(msg)) throw e1;
-      
+
       showStatus('Getting authorization...', 'info');
       token = await getTokenViaWebAuthFlow([
         'https://www.googleapis.com/auth/drive',
@@ -151,60 +161,100 @@ document.getElementById('organize').addEventListener('click', async () => {
         'https://www.googleapis.com/auth/drive.metadata.readonly'
       ]);
     }
-    
+
     showStatus('Fetching Drive files...', 'info');
     const files = await listDriveFiles(token);
-    
+
     if (files.length === 0) {
       showStatus('No files found in your Drive', 'info');
       out.textContent = 'No files found in your Google Drive to organize.';
       return;
     }
-    
-    showStatus(`Analyzing ${files.length} files with AI...`, 'info');
+
+    showStatus(`Starting AI analysis of ${files.length} files...`, 'info');
+    out.textContent = `🔍 Analyzing ${files.length} files with AI...\n\n`;
+
+    // Show initial progress with loading animation
+    let progressText = `📊 Progress: 0/${files.length} files analyzed\n⏳ Processing...`;
+    out.textContent += progressText;
+
     const res = await fetch('http://127.0.0.1:4000/drive/organize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ files, move: false, auth_token: token })
     });
-    
+
     if (!res.ok) {
       throw new Error(`Server error: ${res.status} ${res.statusText}`);
     }
-    
+
     const data = await res.json();
-    
+
     if (data.error) {
       throw new Error(data.error);
     }
-    
+
+    // Update progress as files are processed
+    const organized = data.organized_files || [];
+    let completedFiles = 0;
+
+    // Simulate progress updates during analysis with enhanced visual feedback
+    const progressInterval = setInterval(() => {
+      if (completedFiles < organized.length) {
+        completedFiles++;
+        const progress = Math.round((completedFiles / files.length) * 100);
+        const currentFile = organized[completedFiles - 1];
+        const fileName = currentFile ? currentFile.name : 'Unknown file';
+
+        progressText = `📊 Progress: ${completedFiles}/${files.length} files analyzed (${progress}%)\n`;
+        progressText += `✅ Last processed: ${fileName}\n`;
+        progressText += `📁 Category: ${currentFile ? currentFile.proposed_category : 'Unknown'}\n`;
+        progressText += `⏳ ${completedFiles < files.length ? 'Processing next file...' : 'Finalizing...'}`;
+
+        out.textContent = `🔍 Analyzing ${files.length} files with AI...\n\n${progressText}`;
+      }
+    }, 800); // Update every 800ms
+
     showStatus('Saving organization proposals...', 'info');
     try {
       await fetch('http://127.0.0.1:4000/drive/proposals_ingest', {
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
     } catch (ingestError) {
       console.warn('Failed to ingest proposals:', ingestError);
     }
-    
+
+    // Clear the progress interval and show final result
+    clearInterval(progressInterval);
+
     showStatus('Organization complete! Check your Clarifile dashboard.', 'success');
-    
-    // Format the output nicely
-    const organized = data.organized || [];
-    const summary = ` Successfully analyzed ${files.length} files!\n\n Organization Summary:\n${organized.map(item => `• ${item.name} → ${item.category}`).join('\n')}\n\nOpen your Clarifile dashboard to review and approve the suggestions.`;
-    
+
+    // Format the final output nicely with enhanced formatting
+    let summary = `✅ Successfully analyzed ${files.length} files!\n\n📋 Organization Summary:\n`;
+
+    if (organized.length > 0) {
+        summary += organized.map(item => {
+            const fileSummary = item.summary ? `\n   📝 Summary: ${item.summary.substring(0, 100)}${item.summary.length > 100 ? '...' : ''}` : '';
+            return `• ${item.name} → ${item.proposed_category}${fileSummary}`;
+        }).join('\n');
+    } else {
+        summary += 'No files were organized.';
+    }
+
+    summary += `\n\n🎉 Open your Clarifile dashboard to review and approve the suggestions.`;
+
     out.textContent = summary;
-    
+
   } catch (e) {
     const errorMsg = e && e.message ? e.message : String(e);
     showStatus(' Organization failed: ' + errorMsg, 'error');
-    
+
     if (errorMsg.includes('127.0.0.1:4000')) {
-      out.textContent = ` Cannot connect to Clarifile server.\n\nPlease make sure:\n1. Clarifile is running on your computer\n2. The server is accessible at http://127.0.0.1:4000\n3. Check your firewall settings`;
+      out.textContent = `❌ Cannot connect to Clarifile server.\n\nPlease make sure:\n1. Clarifile is running on your computer\n2. The server is accessible at http://127.0.0.1:4000\n3. Check your firewall settings`;
     } else {
-      out.textContent = `Error: ${errorMsg}\n\nPlease try again or contact support if the issue persists.`;
+      out.textContent = `❌ Error: ${errorMsg}\n\nPlease try again or contact support if the issue persists.`;
     }
 
   } finally {
