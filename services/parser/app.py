@@ -2351,7 +2351,11 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
     move_performed = False
     drive_service = None
     if req.move and req.auth_token:
-        {{ ... }}
+        try:
+            drive_service = get_drive_service(req.auth_token)
+        except Exception as e:
+            print(f"Error initializing Drive service: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to initialize Google Drive service: {str(e)}")
 
     # USE SMART CONTENT ANALYSIS FOR EACH FILE
     for f in req.files:

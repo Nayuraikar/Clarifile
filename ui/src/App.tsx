@@ -12,28 +12,43 @@ async function call(path: string, opts?: RequestInit) {
 
 // Helper to extract the proposed category from a proposal regardless of field name variations
 function getProposalCategory(p: any): string {
-  // First check if we have a direct proposed_label (from backend)
-  if (p?.proposed_label && typeof p.proposed_label === 'string' && p.proposed_label.trim().length > 0) {
-    return p.proposed_label.trim();
+  const getCategory = () => {
+    // First check if we have a direct proposed_label (from backend)
+    if (p?.proposed_label && typeof p.proposed_label === 'string' && p.proposed_label.trim().length > 0) {
+      return p.proposed_label.trim();
+    }
+    
+    // Fallback to other possible fields
+    const candidates = [
+      p?.proposed_category,
+      p?.proposed,
+      p?.category,
+      p?.label,
+      p?.folder,
+      p?.target_folder,
+    ];
+    
+    // Return the first non-empty candidate
+    for (const c of candidates) {
+      if (typeof c === 'string' && c.trim().length > 0) return c.trim();
+    }
+    
+    // Default fallback
+    return 'Uncategorized';
+  };
+
+  // Get the category
+  let category = getCategory();
+  
+  // Check if the category is in the format "Category: Category" and simplify it
+  if (category.includes(':')) {
+    const [main, sub] = category.split(':').map(s => s.trim());
+    if (main.toLowerCase() === sub.toLowerCase()) {
+      return main; // Return just "Shopping" instead of "Shopping: Shopping"
+    }
   }
   
-  // Fallback to other possible fields
-  const candidates = [
-    p?.proposed_category,
-    p?.proposed,
-    p?.category,
-    p?.label,
-    p?.folder,
-    p?.target_folder,
-  ];
-  
-  // Return the first non-empty candidate
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.trim().length > 0) return c.trim();
-  }
-  
-  // Default fallback
-  return 'Uncategorized';
+  return category;
 }
 
 type Proposal = { id: number; file: string; proposed: string; final?: string }
@@ -182,61 +197,115 @@ export default function App() {
     setLoading('refreshCats', true)
     try {
       // Always refresh proposals from gateway to avoid stale client state
-      const propsResp = await call('/drive/proposals')
-      const proposals = Array.isArray(propsResp) ? propsResp : []
+      const [propsResp, categoriesResp] = await Promise.all([
+        call('/drive/proposals'),
+        call('/drive/categories')
+      ]);
+      
+      const proposals = Array.isArray(propsResp) ? propsResp : [];
+      const categories = Array.isArray(categoriesResp) ? categoriesResp : [];
+      
       // Keep local state in sync (optional, useful elsewhere in UI)
-      setDriveProps(proposals)
+      setDriveProps(proposals);
 
       // If no proposals yet, return empty categories
       if (proposals.length === 0) {
-        setCats([])
-        return
+        setCats(categories);
+        return;
       }
 
+      // Create a map of category names to their folder info
+      const categoryInfoMap = new Map();
+      categories.forEach((cat: any) => {
+        categoryInfoMap.set(cat.name, {
+          folder_id: cat.folder_id,
+          missing_folder: cat.missing_folder || false
+        });
+      });
+
       // Extract unique categories from proposals
-      const categoryMap = new Map<string, number>()
+      const categoryMap = new Map<string, number>();
       proposals.forEach(file => {
-        const category = getProposalCategory(file) || 'Uncategorized'
-        categoryMap.set(category, (categoryMap.get(category) || 0) + 1)
-      })
+        const category = getProposalCategory(file) || 'Uncategorized';
+        categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
+      });
 
-      // Convert to array of categories with counts
-      const baseCats = Array.from(categoryMap.entries()).map(([name, count]) => ({
-        name,
-        count,
-        folder_id: null,
-        missing_folder: false
-      }))
-
-      // Fetch existing files in each Drive folder (if folder_id present)
-      const categoriesWithFiles = await Promise.all(baseCats.map(async (cat:any) => {
-        let existing: any[] = []
-        if (cat.folder_id) {
+      // Fetch existing files for all folders in parallel
+      const folderContents = new Map();
+      const folderPromises = categories
+        .filter((cat: any) => cat.folder_id)
+        .map(async (cat: any) => {
           try {
-            const r = await call(`/drive/folder_contents?folderId=${encodeURIComponent(cat.folder_id)}&limit=500`)
-            existing = (r && Array.isArray(r.files)) ? r.files : []
-          } catch (_) { existing = [] }
-        }
-        const key = String(cat.name||'').trim().toLowerCase()
-        // Proposed for this category
-        const proposedRaw = proposals
-          .filter(file => getProposalCategory(file).toLowerCase() === key)
-          .map(file => ({ id: (file as any).id, name: (file as any).name }))
-        // Dedupe: remove proposed items already existing in the folder
-        const existingIdSet = new Set((existing || []).map((f:any)=>String(f.id)))
-        const existingNameSet = new Set((existing || []).map((f:any)=>String(f.name).trim().toLowerCase()))
-        const proposed = proposedRaw.filter((p:any)=>{
-          if (p?.id && existingIdSet.has(String(p.id))) return false
-          const nm = String(p?.name||'').trim().toLowerCase()
-          if (nm && existingNameSet.has(nm)) return false
-          return true
-        })
-        return { ...cat, existing, proposed }
-      }))
+            const r = await call(`/drive/folder_contents?folderId=${encodeURIComponent(cat.folder_id)}&limit=500`);
+            folderContents.set(cat.name, Array.isArray(r?.files) ? r.files : []);
+          } catch (_) {
+            folderContents.set(cat.name, []);
+          }
+        });
+      
+      await Promise.all(folderPromises);
 
-      setCats(categoriesWithFiles)
+      // Process all categories, including those with and without folders
+      const allCategories = new Set([
+        ...Array.from(categoryMap.keys()),
+        ...Array.from(categoryInfoMap.keys())
+      ]);
+
+      const categoriesWithFiles = await Promise.all(
+        Array.from(allCategories).map(async (categoryName) => {
+          const info = categoryInfoMap.get(categoryName) || {};
+          const existing = folderContents.get(categoryName) || [];
+          
+          // Get proposed files for this category
+          const proposedRaw = proposals
+            .filter(file => {
+              const fileCategory = getProposalCategory(file) || 'Uncategorized';
+              return fileCategory === categoryName;
+            })
+            .map(file => ({
+              id: (file as any).id,
+              name: (file as any).name,
+              mimeType: (file as any).mimeType
+            }));
+
+          // Dedupe: remove proposed items already existing in the folder
+          const existingIdSet = new Set(existing.map((f: any) => String(f.id)));
+          const existingNameSet = new Set(
+            existing.map((f: any) => String(f.name).trim().toLowerCase())
+          );
+
+          const proposed = proposedRaw.filter((p: any) => {
+            if (p?.id && existingIdSet.has(String(p.id))) return false;
+            const nm = String(p?.name || '').trim().toLowerCase();
+            if (nm && existingNameSet.has(nm)) return false;
+            return true;
+          });
+
+          return {
+            name: categoryName,
+            count: proposed.length,
+            folder_id: info.folder_id || null,
+            missing_folder: info.missing_folder || false,
+            existing: existing.map((f: any) => ({
+              id: f.id,
+              name: f.name,
+              mimeType: f.mimeType
+            })),
+            proposed
+          };
+        })
+      );
+
+      // Sort categories by name for consistent display
+      categoriesWithFiles.sort((a, b) => a.name.localeCompare(b.name));
+      
+      setCats(categoriesWithFiles);
+    } catch (error) {
+      console.error('Error refreshing categories:', error);
+      // If there's an error, still try to show what we have
+      setCats([]);
     } finally {
-      setLoading('refreshCats', false)
+      setLoading('refreshCats', false);
     }
   }
 

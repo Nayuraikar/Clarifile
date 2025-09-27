@@ -274,6 +274,16 @@ def extract_entities(text: str):
     return uniques
 
 def summarize_with_gemini(long_text: str, max_tokens: int = 512) -> str:
+    """
+    Generate a summary of the input text while preserving any bold formatting.
+    
+    Args:
+        long_text: The input text to summarize
+        max_tokens: Maximum number of tokens for the summary
+        
+    Returns:
+        str: A summary with preserved bold formatting (text between **)
+    """
     if not long_text.strip():
         return ""
 
@@ -281,31 +291,78 @@ def summarize_with_gemini(long_text: str, max_tokens: int = 512) -> str:
     try:
         prompt = (
             "Summarize the following text into a concise, clear paragraph. "
-            "Capture the key points without losing important details:\n\n"
-            f"{long_text}\n\nSUMMARY:"
+            "Capture the key points without losing important details. "
+            "IMPORTANT: Preserve any text enclosed in double asterisks (like **this**) "
+            "exactly as-is in the summary. These represent important terms or phrases "
+            "that must remain bold. For example, if the text contains '**critical info**', "
+            "the summary must include '**critical info**' with the double asterisks.\n\n"
+            f"TEXT TO SUMMARIZE:\n{long_text}\n\n"
+            "SUMMARY (preserve **bold** formatting):"
         )
+        
         result = gemini_generate(prompt, temperature=0.3, max_output_tokens=max_tokens)
+        
         if result.strip():
             return result.strip()
+            
     except Exception as e:
         print(f"Gemini summarization failed: {e}")
 
-    # Fallback: simple text summarization
+    # Fallback: simple text summarization that preserves bold formatting
     print("Using fallback summarization...")
-    sentences = long_text.strip().split('.')
-    sentences = [s.strip() for s in sentences if s.strip()]
+    
+    # Split by sentences while preserving bold sections
+    sentences = []
+    current_sentence = ""
+    in_bold = False
+    
+    for char in long_text.strip():
+        current_sentence += char
+        if char == '*':
+            in_bold = not in_bold
+        elif char == '.' and not in_bold:
+            if current_sentence.strip():
+                sentences.append(current_sentence.strip())
+                current_sentence = ""
+    
+    if current_sentence.strip():
+        sentences.append(current_sentence.strip())
+    
+    # Filter out empty sentences
+    sentences = [s for s in sentences if s.strip()]
 
+    if not sentences:
+        return ""
+        
     if len(sentences) <= 2:
-        return long_text[:500] + "..." if len(long_text) > 500 else long_text
+        summary = long_text[:500] + "..." if len(long_text) > 500 else long_text
+        # Ensure bold sections are preserved in the truncated text
+        if '**' in long_text and '**' not in summary:
+            # If we lost bold markers in truncation, add them back
+            bold_sections = re.findall(r'\*\*(.*?)\*\*', long_text)
+            for section in bold_sections:
+                if section in summary:
+                    summary = summary.replace(section, f'**{section}**')
+        return summary
 
-    # Take first sentence + key sentences
+    # Take first sentence + key sentences, preserving any bold formatting
     summary_parts = [sentences[0]]
     if len(sentences) > 1:
         summary_parts.append(sentences[len(sentences)//2])  # middle sentence
     if len(sentences) > 2:
         summary_parts.append(sentences[-1])  # last sentence
 
-    summary = '. '.join(summary_parts) + '.'
+    summary = ' '.join(summary_parts)
+    # Ensure we don't double up periods
+    summary = re.sub(r'\.\.+', '.', summary)
+    
+    # Ensure bold sections are preserved in the final summary
+    if '**' in long_text and '**' not in summary:
+        bold_sections = re.findall(r'\*\*(.*?)\*\*', long_text)
+        for section in bold_sections:
+            if section in summary and f'**{section}**' not in summary:
+                summary = summary.replace(section, f'**{section}**')
+    
     return summary[:500] + "..." if len(summary) > 500 else summary
 
 def classify_with_gemini(content: str) -> str:
@@ -395,7 +452,15 @@ def classify_with_gemini(content: str) -> str:
                 # Otherwise, take the first word as category, rest as subcategory
                 parts = result.split()
                 return f"{parts[0]}: {' '.join(parts[1:])}"
-
+            
+            # Check if the category and subcategory are the same (e.g., "Shopping: Shopping")
+            if ':' in result:
+                main_category, subcategory = result.split(':', 1)
+                main_category = main_category.strip()
+                subcategory = subcategory.strip()
+                if main_category.lower() == subcategory.lower():
+                    return main_category  # Return just "Shopping" instead of "Shopping: Shopping"
+            
             return result
 
         print(f"Gemini returned invalid result: '{result}' for content: {analysis_text[:100]}...")
