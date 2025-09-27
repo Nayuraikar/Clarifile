@@ -19,9 +19,9 @@ let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = '1085724686418-fgvn7on50g4dmq2la1q84dflt66at0mo.apps.googleusercontent.com'; 
-const CLIENT_SECRET = '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';                         
-const REDIRECT_URI = 'https://aanmbhbgdehmchcjbiblopfkdcpejpkh.chromiumapp.org/';    
+const CLIENT_ID = '455192139473-6s9u7fqkght1on8pf0rqbd447a1vs63h.apps.googleusercontent.com'; 
+const CLIENT_SECRET = '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';                         
+const REDIRECT_URI = 'https://ohikgmkhnnlblfljijlhdpnfdhlpbbni.chromiumapp.org/';    
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
@@ -105,6 +105,44 @@ app.get('/drive/folder_contents', async (req, res) => {
 
 app.post('/embed', async (req, res) => {
   try { const r = await axios.post(`${EMBED}/embed_pending`); res.json(r.data); }
+  catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// ====== ENHANCED CATEGORIZATION ENDPOINTS ======
+
+// Categorize content using enhanced system
+app.post('/categorize_content', async (req, res) => {
+  try { const r = await axios.post(`${EMBED}/categorize_content`, req.body); res.json(r.data); }
+  catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Process a single file with enhanced categorization
+app.post('/process_file', async (req, res) => {
+  try { const r = await axios.post(`${EMBED}/process_file`, req.body); res.json(r.data); }
+  catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Batch categorize multiple files
+app.post('/batch_categorize', async (req, res) => {
+  try { const r = await axios.post(`${EMBED}/batch_categorize`, req.body); res.json(r.data); }
+  catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Load a saved categorization model
+app.post('/load_categorization_model', async (req, res) => {
+  try { const r = await axios.post(`${EMBED}/load_categorization_model`, req.body); res.json(r.data); }
+  catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Get model information
+app.get('/model_info', async (req, res) => {
+  try { const r = await axios.get(`${EMBED}/model_info`); res.json(r.data); }
+  catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// List available categorization models
+app.get('/list_models', async (req, res) => {
+  try { const r = await axios.get(`${EMBED}/list_models`); res.json(r.data); }
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 

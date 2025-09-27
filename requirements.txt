@@ -38,6 +38,8 @@ ollama==0.5.3
 openai-whisper==20250625
 opencv-python==4.12.0.88
 packaging==25.0
+pdf2image==1.17.0
+pdfplumber==0.11.4
 pillow==11.3.0
 proglog==0.1.12
 pyasn1==0.6.1

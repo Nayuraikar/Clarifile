@@ -1,0 +1,19 @@
+INVOICE
+
+Invoice Number: INV-2024-001
+Date: January 15, 2024
+Bill To: 
+  John Doe Company
+  123 Business Street
+  City, State 12345
+
+Description: Software development services
+Hours: 50 @ $25.00/hour
+Subtotal: $1,250.00
+Tax: $0.00
+Total Amount Due: $1,250.00
+
+Payment Terms: Net 30 days
+Due Date: February 14, 2024
+
+Thank you for your business!

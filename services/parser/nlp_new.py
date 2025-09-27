@@ -1,10 +1,44 @@
-# --- CONFIG ---
+# services/parser/nlp.py
+"""
+NLU helpers using Google Generative Language (Gemini) via API key.
+- Gemini calls are deterministic (temperature=0).
+- If context is long we chunk by sentence boundaries and query each chunk.
+- If Gemini can't find an answer, it will be instructed to return "I don't know".
+"""
+
 import os
 import time
 import requests
+import nltk
 import re
+import logging
 from typing import Dict
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(os.path.dirname(__file__), 'parser.log')),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# sentence tokenizer
+nltk.download("punkt", quiet=True)
+from nltk.tokenize import sent_tokenize
+
+# Import the smart categorizer
+try:
+    from .smart_categorizer import SmartCategorizer
+    SMART_CATEGORIZATION_AVAILABLE = True
+    _smart_categorizer = SmartCategorizer()
+except ImportError:
+    SMART_CATEGORIZATION_AVAILABLE = False
+    print("Warning: Smart categorizer not available. Install required dependencies.")
+
+# --- CONFIG ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEYS", "").split(",") if k.strip()]
 if not GEMINI_API_KEYS and GEMINI_API_KEY:
@@ -310,16 +344,29 @@ def summarize_with_gemini(long_text: str, max_tokens: int = 512) -> str:
 
 def classify_with_gemini(content: str) -> str:
     """
-    Use Gemini to classify file content into a detailed and specific category.
-    The categories are designed to be specific and useful for document organization.
+    Use smart categorization with embeddings and clustering for file content classification.
+    Falls back to Gemini API if smart categorization is not available.
     """
     if not content.strip():
-        return "Uncategorized"
+        return "Uncategorized: General"
+
+    # Try smart categorization first if available
+    if SMART_CATEGORIZATION_AVAILABLE:
+        try:
+            category = _smart_categorizer.categorize_content(content, "document")
+            print(f"Smart categorization result: {category}")
+            return category
+        except Exception as e:
+            print(f"Smart categorization failed: {e}")
+            # Fall through to Gemini classification
+
+    # Fallback to Gemini classification
+    print("Using Gemini classification as fallback...")
 
     # Extract the first 2000 characters for analysis (to avoid token limits)
     analysis_text = content[:2000]
     text_lower = analysis_text.lower()
-    
+
     # ===== EXPLICIT ACADEMIC PAPER DETECTION =====
     # Check for academic paper indicators first (before Gemini)
     academic_keywords = [
@@ -331,10 +378,10 @@ def classify_with_gemini(content: str) -> str:
         'related work', 'background', 'experimental results', 'evaluation', 'findings',
         'contribution', 'limitation', 'future work', 'appendix'
     ]
-    
+
     # Count academic indicators in the text
     academic_score = sum(1 for word in academic_keywords if word in text_lower)
-    
+
     # If we have multiple academic indicators, it's definitely a research paper
     if academic_score >= 2:
         print(f"Academic paper detected with score {academic_score}")
@@ -349,17 +396,17 @@ def classify_with_gemini(content: str) -> str:
             return "Physics: Research Paper"
         else:
             return "Academic: Research Paper"
-    
+
     # Check for PDFs with academic structure
     if '.pdf' in content.lower() and len(analysis_text) > 500:
         # Look for section headers that indicate academic content
         section_headers = ['abstract', 'introduction', 'method', 'result', 'conclusion', 'reference']
         section_count = sum(1 for section in section_headers if f"\n{section}" in text_lower)
-        
+
         if section_count >= 2:  # At least 2 academic sections found
             print(f"PDF with academic structure detected: {section_count} sections found")
             return "Academic: Research Paper"
-    
+
     # ===== GEMINI CLASSIFICATION =====
     # Only try Gemini if we haven't already classified it as an academic paper
     try:
@@ -402,14 +449,14 @@ def classify_with_gemini(content: str) -> str:
 
     except Exception as e:
         print(f"Gemini classification failed: {e}")
-        
+
     # ===== FALLBACK CLASSIFICATION =====
     print("Using enhanced fallback classification...")
-    
+
     # Define document type keywords and their categories
     doc_keywords = {
         'Academic: Research Paper': [
-            'abstract', 'introduction', 'methodology', 'experiment', 'results', 'discussion', 
+            'abstract', 'introduction', 'methodology', 'experiment', 'results', 'discussion',
             'conclusion', 'references', 'bibliography', 'citation', 'literature review',
             'peer-reviewed', 'academic', 'research', 'study', 'paper', 'thesis', 'dissertation',
             'conference', 'journal', 'publication', 'author', 'affiliation', 'university',
@@ -435,20 +482,20 @@ def classify_with_gemini(content: str) -> str:
             'action items', 'attendees', 'discussion points', 'meeting notes'
         ]
     }
-    
+
     # Count keyword matches for each category
     category_scores = {}
     for category, keywords in doc_keywords.items():
         score = sum(1 for word in keywords if word in text_lower)
         if score > 0:
             category_scores[category] = score
-    
+
     # If we have matches, return the category with the highest score
     if category_scores:
         best_category = max(category_scores.items(), key=lambda x: x[1])[0]
         print(f"Fallback classification: {best_category} (score: {category_scores[best_category]})")
         return best_category
-    
+
     # Check for PDFs with academic structure
     if '.pdf' in content.lower() and len(analysis_text) > 500:
         section_headers = ['abstract', 'introduction', 'method', 'result', 'conclusion', 'reference']
@@ -456,11 +503,11 @@ def classify_with_gemini(content: str) -> str:
         if section_count >= 2:
             print(f"PDF with academic structure detected: {section_count} sections")
             return "Academic: Research Paper"
-    
+
     # Final fallback based on content length
     if len(analysis_text) > 500:  # Substantial content
         return "General: Document"
     elif '.pdf' in content.lower():
         return "Academic: Research Paper"  # Default for PDFs we're not sure about
-    
+
     return "Uncategorized: General"
