@@ -1788,7 +1788,7 @@ class FramerGamification {
   addAnimatedIcons() {
     // Add animated icons to headings
     const headings = document.querySelectorAll('.hero-heading, .section-heading, .card-heading');
-    const icons = ['✨', '🚀', '⚡', '💎', '🌟', '🎯'];
+    const icons = ['*', '^', '!', '+', '*', '>>'];
     
     headings.forEach((heading, index) => {
       const icon = document.createElement('span');

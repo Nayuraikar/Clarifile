@@ -406,7 +406,7 @@ export default function App() {
               if (response && response.summary !== undefined) {
                 appendToChat(file.id, {
                   role: 'assistant',
-                  content: `I've analyzed the file \"${file.name}\". Here's what I found:\n\n**Summary:** ${response.summary}\n**Category:** ${response.category || 'General'}\n**Tags:** ${response.tags?.join(', ') || 'None'}\n\nYou can now ask me questions about this file!`
+                  content: `I've analyzed the file **"${file.name}"**. Here's what I found:\n\n${response.summary}\n\nYou can now ask me questions about this file!`
                 })
                 setNotification('Summary generated successfully!')
               } else if (response?.error) {
@@ -636,8 +636,8 @@ export default function App() {
                           <path d="M21 19V21H3V19H21Z" fill="currentColor"/>
                         </svg>
                       </div>
-                      <h3 className="card-heading mb-3">Lightning Fast</h3>
-                      <p className="card-description">Process thousands of files in seconds with our optimized AI engine</p>
+                      <h3 className="card-heading mb-3">Go Beyond Storage</h3>
+                      <p className="card-description">Summarize, Analyze, and Understand your documents</p>
                     </div>
                   </div>
                   
@@ -923,7 +923,7 @@ export default function App() {
                                 if (response.summary) {
                                   appendToChat(file.id, {
                                     role: 'assistant',
-                                    content: `I've analyzed the file "${file.name}". Here's what I found:\n\n**Summary:** ${response.summary}\n**Category:** ${response.category || 'General'}\n**Tags:** ${response.tags?.join(', ') || 'None'}\n\nYou can now ask me questions about this file!`
+                                    content: `I've analyzed the file **"${file.name}"**. Here's what I found:\n\n${response.summary}\n\nYou can now ask me questions about this file!`
                                   });
                                   console.log('Added analysis to AI Assistant chat');
                                 }

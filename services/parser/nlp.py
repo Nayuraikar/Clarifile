@@ -156,14 +156,14 @@ def gemini_generate(prompt: str, temperature: float = 0.0, max_output_tokens: in
     Returns the generated text or empty string on failure.
     """
     if not GEMINI_API_KEYS:
-        print("❌ No Gemini API keys configured")
+        print("No Gemini API keys configured")
         return ""
 
     payload = {
         "contents": [
             {"parts": [{"text": prompt}]}
         ],
-        "generationConfig": {          # ✅ FIXED: correct place for params
+        "generationConfig": {          # FIXED: correct place for params
             "temperature": float(temperature),
             "maxOutputTokens": int(max_output_tokens),
         }
@@ -226,7 +226,7 @@ def best_answer_or_summary(question: str, context_text: str) -> Dict:
     base_instruction = (
         "You are a helpful assistant. Use the TEXT below to answer the QUESTION. "
         "Prefer giving the best possible answer from the text, even if partially relevant. "
-        "If the text truly contains nothing useful, then reply exactly: I don't know.\n\n"
+        "If the text truly contains nothing useful, then reply exactly:\ No relevant information found.\\n\n"
     )
 
     if len(context_text.split()) <= 1200:

@@ -166,9 +166,9 @@ def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)
     """Download the Drive file, extract text using existing extractors, summarize with Gemini,
     and optionally answer a question against the text. Returns transient results (no DB write).
     """
-    print("🚨🚨🚨 DRIVE_ANALYZE ENDPOINT CALLED! 🚨🚨🚨")
-    print(f"🚨 File: {req.file.get('name') if req.file else 'NO FILE'}")
-    print("🚨🚨🚨 NEW CATEGORIZATION LOGIC ACTIVE! 🚨🚨🚨")
+    print("DRIVE_ANALYZE ENDPOINT CALLED!")
+    print(f"File: {req.file.get('name') if req.file else 'NO FILE'}")
+    print("NEW CATEGORIZATION LOGIC ACTIVE!")
     
     token = req.auth_token or auth_token
     file = req.file or {}
@@ -198,29 +198,29 @@ def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)
 
         summary = summarize_text(text)
         # Use the full extracted text for smart categorization, not just summary
-        print(f"🔍 EXTRACTION DEBUG: Text extracted: {len(text) if text else 0} chars")
-        print(f"🔍 EXTRACTION DEBUG: Summary generated: {len(summary) if summary else 0} chars")
-        print(f"🔍 EXTRACTION DEBUG: Text preview: '{text[:300] if text else 'NO TEXT'}'")
-        print(f"🔍 EXTRACTION DEBUG: Summary preview: '{summary[:200] if summary else 'NO SUMMARY'}'")
+        print(f"EXTRACTION DEBUG: Text extracted: {len(text) if text else 0} chars")
+        print(f"EXTRACTION DEBUG: Summary generated: {len(summary) if summary else 0} chars")
+        print(f"EXTRACTION DEBUG: Text preview: '{text[:300] if text else 'NO TEXT'}'")
+        print(f"EXTRACTION DEBUG: Summary preview: '{summary[:200] if summary else 'NO SUMMARY'}'")
         
         # FORCE CATEGORIZATION WITH ACTUAL CONTENT
         if text and len(text.strip()) > 10:
-            print(f"🚀 FORCING CATEGORIZATION with extracted text")
+            print(f"FORCING CATEGORIZATION with extracted text")
             cat_id, cat_name = assign_category_from_summary("", text)
             if cat_name == "CATEGORIZATION_FAILED":
-                print(f"❌ CATEGORIZATION FAILED - content could not be properly categorized")
+                print(f"CATEGORIZATION FAILED - content could not be properly categorized")
                 raise HTTPException(status_code=422, detail="Could not categorize file content - no matching category found")
         elif summary and len(summary.strip()) > 10:
-            print(f"🚀 FORCING CATEGORIZATION with summary")
+            print(f"FORCING CATEGORIZATION with summary")
             cat_id, cat_name = assign_category_from_summary(summary, "")
             if cat_name == "CATEGORIZATION_FAILED":
-                print(f"❌ CATEGORIZATION FAILED - summary could not be properly categorized")
+                print(f"CATEGORIZATION FAILED - summary could not be properly categorized")
                 raise HTTPException(status_code=422, detail="Could not categorize file content - no matching category found")
         else:
-            print(f"❌ NO CONTENT TO ANALYZE - failing completely")
+            print(f"NO CONTENT TO ANALYZE - failing completely")
             raise HTTPException(status_code=422, detail="No extractable content found in file")
         
-        print(f"🎯 FINAL RESULT: Category = {cat_name}")
+        print(f"FINAL RESULT: Category = {cat_name}")
 
         answer = None
         score = 0
@@ -389,9 +389,9 @@ async def shutdown_event():
     if conn:
         try:
             conn.close()
-            print("✅ Database connection closed")
+            print("Database connection closed")
         except Exception as e:
-            print(f"❌ Error closing database connection: {e}")
+            print(f"Error closing database connection: {e}")
 
 
 # --- Utilities ---
@@ -580,7 +580,7 @@ def summarize_text(long_text: str) -> str:
     if not long_text.strip():
         return ""
 
-    print("📝 Using Gemini API for summarization with gemini-2.5-flash")
+    print("Using Gemini API for summarization with gemini-2.5-flash")
     try:
         return nlp.summarize_with_gemini(long_text, max_tokens=512)
     except Exception as e:
@@ -714,12 +714,12 @@ def analyze_content_directly(content):
     
     content_clean = content.strip()
     
-    print(f"🤖 AI ANALYSIS: Processing {len(content_clean)} characters")
-    print(f"🤖 CONTENT PREVIEW: {content_clean[:300]}...")
+    print(f"AI ANALYSIS: Processing {len(content_clean)} characters")
+    print(f"CONTENT PREVIEW: {content_clean[:300]}...")
     
     try:
         # LOAD AI MODELS FOR INTELLIGENT ANALYSIS
-        print("🧠 Loading AI models for content understanding...")
+        print("Loading AI models for content understanding...")
         from sentence_transformers import SentenceTransformer
         import numpy as np
         from sklearn.feature_extraction.text import TfidfVectorizer
@@ -732,31 +732,31 @@ def analyze_content_directly(content):
         
         # STEP 1: SEMANTIC EMBEDDING ANALYSIS
         embedding = model.encode([content_clean], convert_to_numpy=True)
-        print(f"🧠 Generated semantic embedding: {embedding.shape}")
+        print(f"Generated semantic embedding: {embedding.shape}")
         
         # STEP 2: EXTRACT KEY CONCEPTS USING AI
         key_concepts = extract_key_concepts_ai(content_clean, model)
-        print(f"🔍 AI EXTRACTED CONCEPTS: {key_concepts}")
+        print(f"AI EXTRACTED CONCEPTS: {key_concepts}")
         
         # STEP 3: SEMANTIC SIMILARITY TO DISCOVER CATEGORY
         category = discover_category_semantically(content_clean, embedding, key_concepts, model)
         
         if category:
-            print(f"✅ AI DISCOVERED CATEGORY: {category}")
+            print(f"AI DISCOVERED CATEGORY: {category}")
             return category
         
         # STEP 4: FALLBACK TO INTELLIGENT CONTENT CLUSTERING
         fallback_category = intelligent_content_clustering(content_clean, embedding)
         if fallback_category:
-            print(f"✅ AI CLUSTERING RESULT: {fallback_category}")
+            print(f"AI CLUSTERING RESULT: {fallback_category}")
             return fallback_category
         
     except Exception as e:
-        print(f"🤖 AI Analysis failed: {e}")
+        print(f"AI Analysis failed: {e}")
         import traceback
         traceback.print_exc()
     
-    print("❌ AI COULD NOT UNDERSTAND CONTENT - FAILING")
+    print("AI COULD NOT UNDERSTAND CONTENT - FAILING")
     return None
 
 def extract_key_concepts_ai(content, model):
@@ -800,7 +800,7 @@ def discover_category_semantically(content, embedding, key_concepts, model):
     
     # Analyze content semantically to understand its nature
     content_nature = analyze_content_nature_ai(content, key_concepts)
-    print(f"🧠 AI CONTENT NATURE: {content_nature}")
+    print(f"AI CONTENT NATURE: {content_nature}")
     
     if content_nature:
         return content_nature
@@ -825,7 +825,7 @@ def discover_category_semantically(content, embedding, key_concepts, model):
     category_names = list(category_prototypes.keys())
     best_category = category_names[best_match_idx]
     
-    print(f"🧠 SEMANTIC SIMILARITY: {best_category} (confidence: {best_similarity:.3f})")
+    print(f"SEMANTIC SIMILARITY: {best_category} (confidence: {best_similarity:.3f})")
     
     # Only return if confidence is reasonable
     if best_similarity > 0.4:
@@ -1069,7 +1069,7 @@ def analyze_content_nature_ai(content, key_concepts):
     if insurance_score >= 2:
         nature_indicators['Insurance'] = insurance_score * 3
     
-    print(f"🤖 COMPREHENSIVE AI NATURE ANALYSIS: {nature_indicators}")
+    print(f"COMPREHENSIVE AI NATURE ANALYSIS: {nature_indicators}")
     
     if nature_indicators:
         best_nature = max(nature_indicators.items(), key=lambda x: x[1])
@@ -1084,59 +1084,59 @@ def generate_dynamic_prototypes(key_concepts, content):
     No random single-word categories.
     """
     if not key_concepts or len(key_concepts) < 2:
-        print(f"❌ INSUFFICIENT CONCEPTS FOR PROTOTYPING: {key_concepts}")
+        print(f"INSUFFICIENT CONCEPTS FOR PROTOTYPING: {key_concepts}")
         return {}
     
     # Create dynamic prototypes ONLY for meaningful concept clusters
     prototypes = {}
     concept_str = ' '.join(key_concepts).lower()
     
-    print(f"🧠 ANALYZING CONCEPT CLUSTER: {concept_str}")
+    print(f"ANALYZING CONCEPT CLUSTER: {concept_str}")
     
     # Business/Finance concepts - need multiple related terms
     finance_terms = ['invoice', 'payment', 'amount', 'bill', 'cost', 'price', 'financial', 'money', 'total', 'due']
     finance_matches = sum(1 for term in finance_terms if term in concept_str)
     if finance_matches >= 2:
         prototypes['Finance: Transaction'] = 'invoice payment billing amount cost financial transaction'
-        print(f"💰 FINANCE PROTOTYPE: {finance_matches} matches")
+        print(f"FINANCE PROTOTYPE: {finance_matches} matches")
     
     # Food/Recipe concepts - need multiple related terms
     food_terms = ['recipe', 'ingredients', 'cooking', 'food', 'dish', 'meal', 'preparation', 'cook', 'kitchen']
     food_matches = sum(1 for term in food_terms if term in concept_str)
     if food_matches >= 2:
         prototypes['Food: Recipe'] = 'recipe cooking ingredients food preparation meal dish'
-        print(f"🍳 FOOD PROTOTYPE: {food_matches} matches")
+        print(f"FOOD PROTOTYPE: {food_matches} matches")
     
     # Personal/Diary concepts - need multiple related terms
     personal_terms = ['personal', 'daily', 'routine', 'morning', 'diary', 'journal', 'thoughts', 'feelings']
     personal_matches = sum(1 for term in personal_terms if term in concept_str)
     if personal_matches >= 2:
         prototypes['Personal: Journal'] = 'personal diary journal daily routine thoughts feelings'
-        print(f"📔 PERSONAL PROTOTYPE: {personal_matches} matches")
+        print(f"PERSONAL PROTOTYPE: {personal_matches} matches")
     
     # Work/Business concepts - need multiple related terms
     work_terms = ['meeting', 'project', 'team', 'business', 'work', 'agenda', 'professional', 'company']
     work_matches = sum(1 for term in work_terms if term in concept_str)
     if work_matches >= 2:
         prototypes['Work: Professional'] = 'meeting project team business work professional agenda'
-        print(f"👥 WORK PROTOTYPE: {work_matches} matches")
+        print(f"WORK PROTOTYPE: {work_matches} matches")
     
     # Technical concepts - need multiple related terms
     tech_terms = ['system', 'algorithm', 'technical', 'software', 'development', 'programming', 'code', 'computer']
     tech_matches = sum(1 for term in tech_terms if term in concept_str)
     if tech_matches >= 2:
         prototypes['Technical: Documentation'] = 'technical system software development algorithm programming'
-        print(f"💻 TECH PROTOTYPE: {tech_matches} matches")
+        print(f"TECH PROTOTYPE: {tech_matches} matches")
     
     # Academic concepts - need multiple related terms
     academic_terms = ['research', 'study', 'analysis', 'methodology', 'academic', 'experiment', 'hypothesis']
     academic_matches = sum(1 for term in academic_terms if term in concept_str)
     if academic_matches >= 2:
         prototypes['Academic: Research'] = 'research study analysis methodology academic scientific'
-        print(f"🎓 ACADEMIC PROTOTYPE: {academic_matches} matches")
+        print(f"ACADEMIC PROTOTYPE: {academic_matches} matches")
     
     if not prototypes:
-        print(f"❌ NO MEANINGFUL CONCEPT CLUSTERS FOUND")
+        print(f"NO MEANINGFUL CONCEPT CLUSTERS FOUND")
     
     return prototypes
 
@@ -1316,7 +1316,7 @@ def intelligent_content_clustering(content, embedding):
         top_indices = mean_scores.argsort()[-10:][::-1]
         top_terms = [feature_names[i] for i in top_indices if mean_scores[i] > 0.1]
         
-        print(f"🤖 AI DISCOVERED TOP TERMS: {top_terms}")
+        print(f"AI DISCOVERED TOP TERMS: {top_terms}")
         
         # Use top terms to intelligently determine category
         if top_terms:
@@ -1324,7 +1324,7 @@ def intelligent_content_clustering(content, embedding):
             return category
         
     except Exception as e:
-        print(f"🤖 Clustering analysis failed: {e}")
+        print(f"Clustering analysis failed: {e}")
     
     return None
 
@@ -1335,7 +1335,7 @@ def categorize_from_ai_terms(top_terms, content):
     """
     terms_str = ' '.join(top_terms).lower()
     
-    print(f"🤖 EVALUATING COMPREHENSIVE AI TERMS: {terms_str}")
+    print(f"EVALUATING COMPREHENSIVE AI TERMS: {terms_str}")
     
     # Only create categories if we find MEANINGFUL clusters of related terms
     if any(term in terms_str for term in ['invoice', 'payment', 'bill', 'amount', 'cost', 'financial', 'budget', 'expense', 'revenue', 'tax']):
@@ -1385,7 +1385,7 @@ def categorize_from_ai_terms(top_terms, content):
     
     else:
         # DON'T create random categories from single words
-        print(f"❌ AI TERMS TOO VAGUE FOR COMPREHENSIVE CATEGORIES: {top_terms} - FAILING CATEGORIZATION")
+        print(f"AI TERMS TOO VAGUE FOR COMPREHENSIVE CATEGORIES: {top_terms} - FAILING CATEGORIZATION")
         return None
 
 def understand_content_meaning(content):
@@ -1398,67 +1398,67 @@ def understand_content_meaning(content):
     content_lower = content.lower()
     lines = content.split('\n')
     
-    print(f"📖 READING CONTENT: {len(lines)} lines")
+    print(f"READING CONTENT: {len(lines)} lines")
     
     # FINANCIAL DOCUMENTS - Look for actual financial indicators
     financial_indicators = 0
     if re.search(r'invoice\s*(?:number|#|no\.?)\s*:?\s*\w+', content_lower):
         financial_indicators += 3
-        print("📊 FOUND: Invoice number pattern")
+        print("FOUND: Invoice number pattern")
     
     if re.search(r'amount\s*:?\s*[₹$€£¥]\s*\d+', content_lower):
         financial_indicators += 3
-        print("📊 FOUND: Amount with currency")
+        print("FOUND: Amount with currency")
     
     if re.search(r'due\s*date\s*:?\s*\d{4}-\d{2}-\d{2}', content_lower):
         financial_indicators += 2
-        print("📊 FOUND: Due date pattern")
+        print("FOUND: Due date pattern")
     
     if re.search(r'bill|billing|payment|total|subtotal', content_lower):
         financial_indicators += 1
     
     if financial_indicators >= 3:
-        print("✅ IDENTIFIED: Financial Document (Invoice)")
+        print("IDENTIFIED: Financial Document (Invoice)")
         return "Finance: Invoice"
     
     # RECIPE/FOOD - Look for actual recipe structure
     recipe_indicators = 0
     if re.search(r'ingredients?\s*:?', content_lower):
         recipe_indicators += 3
-        print("🍳 FOUND: Ingredients section")
+        print("FOUND: Ingredients section")
     
     if re.search(r'(?:prep|cook|total)\s*time\s*:?\s*\d+\s*(?:min|hour)', content_lower):
         recipe_indicators += 3
-        print("🍳 FOUND: Cooking time")
+        print("FOUND: Cooking time")
     
     if re.search(r'servings?\s*:?\s*\d+', content_lower):
         recipe_indicators += 2
-        print("🍳 FOUND: Servings information")
+        print("FOUND: Servings information")
     
     if re.search(r'\d+\s*(?:tbsp|tsp|cup|ml|g|kg|oz|lb)', content_lower):
         recipe_indicators += 2
-        print("🍳 FOUND: Recipe measurements")
+        print("FOUND: Recipe measurements")
     
     if recipe_indicators >= 4:
-        print("✅ IDENTIFIED: Recipe")
+        print("IDENTIFIED: Recipe")
         return "Food: Recipe"
     
     # PERSONAL DIARY/LOG - Look for personal writing patterns
     personal_indicators = 0
     if re.search(r'(?:woke up|morning routine|went to bed)', content_lower):
         personal_indicators += 3
-        print("📔 FOUND: Daily routine language")
+        print("FOUND: Daily routine language")
     
     if re.search(r'(?:i feel|i think|my|today i|yesterday i)', content_lower):
         personal_indicators += 2
-        print("📔 FOUND: Personal pronouns and thoughts")
+        print("FOUND: Personal pronouns and thoughts")
     
     if re.search(r'(?:personal|diary|journal|daily log)', content_lower):
         personal_indicators += 3
-        print("📔 FOUND: Personal document keywords")
+        print("FOUND: Personal document keywords")
     
     if personal_indicators >= 3:
-        print("✅ IDENTIFIED: Personal Notes/Diary")
+        print("IDENTIFIED: Personal Notes/Diary")
         return "Personal: Daily Log"
     
     # MEETING MINUTES - Look for meeting structure
@@ -1468,74 +1468,74 @@ def understand_content_meaning(content):
     
     if re.search(r'attendees?\s*:?', content_lower):
         meeting_indicators += 2
-        print("👥 FOUND: Attendees section")
+        print("FOUND: Attendees section")
     
     if re.search(r'action\s*items?\s*:?', content_lower):
         meeting_indicators += 3
-        print("👥 FOUND: Action items")
+        print("FOUND: Action items")
     
     if re.search(r'\d{1,2}:\d{2}(?:\s*[ap]m)?', content_lower):
         meeting_indicators += 1
-        print("👥 FOUND: Time stamps")
+        print("FOUND: Time stamps")
     
     if meeting_indicators >= 4:
-        print("✅ IDENTIFIED: Meeting Minutes")
+        print("IDENTIFIED: Meeting Minutes")
         return "Work: Meeting"
     
     # TECHNICAL/CODE - Look for actual code patterns
     code_indicators = 0
     if re.search(r'(?:function|class|def|import|#include)', content_lower):
         code_indicators += 3
-        print("💻 FOUND: Programming keywords")
+        print("FOUND: Programming keywords")
     
     if re.search(r'(?:algorithm|neural network|machine learning|deep learning)', content_lower):
         code_indicators += 2
-        print("💻 FOUND: Technical AI/ML terms")
+        print("FOUND: Technical AI/ML terms")
     
     if re.search(r'(?:computer vision|cnn|convolution)', content_lower):
         code_indicators += 2
-        print("💻 FOUND: Computer vision terms")
+        print("FOUND: Computer vision terms")
     
     if code_indicators >= 3:
-        print("✅ IDENTIFIED: Technical Document")
+        print("IDENTIFIED: Technical Document")
         return "Technical: Documentation"
     
     # ACADEMIC/RESEARCH - Look for academic structure
     academic_indicators = 0
     if re.search(r'(?:abstract|introduction|methodology|results|conclusion)', content_lower):
         academic_indicators += 3
-        print("🎓 FOUND: Academic paper structure")
+        print("FOUND: Academic paper structure")
     
     if re.search(r'(?:research|study|experiment|hypothesis)', content_lower):
         academic_indicators += 2
-        print("🎓 FOUND: Research terminology")
+        print("FOUND: Research terminology")
     
     if academic_indicators >= 3:
-        print("✅ IDENTIFIED: Academic Paper")
+        print("IDENTIFIED: Academic Paper")
         return "Academic: Research Paper"
     
     # BUSINESS DOCUMENT - Look for business language
     business_indicators = 0
     if re.search(r'(?:company|business|revenue|profit|strategy)', content_lower):
         business_indicators += 2
-        print("💼 FOUND: Business terminology")
+        print("FOUND: Business terminology")
     
     if re.search(r'(?:report|analysis|quarterly|annual)', content_lower):
         business_indicators += 2
-        print("💼 FOUND: Report indicators")
+        print("FOUND: Report indicators")
     
     if business_indicators >= 3:
-        print("✅ IDENTIFIED: Business Document")
+        print("IDENTIFIED: Business Document")
         return "Business: Report"
     
-    print("❓ CONTENT TYPE NOT CLEARLY IDENTIFIED")
+    print("CONTENT TYPE NOT CLEARLY IDENTIFIED")
     return None
 
 def careful_keyword_analysis(content_lower, original_content):
     """
     Careful keyword analysis that actually considers context.
     """
-    print("🔍 PERFORMING CAREFUL KEYWORD ANALYSIS")
+    print("PERFORMING CAREFUL KEYWORD ANALYSIS")
     
     # Count meaningful keywords with context
     keyword_scores = {}
@@ -1545,38 +1545,38 @@ def careful_keyword_analysis(content_lower, original_content):
     finance_score = sum(1 for word in finance_words if word in content_lower)
     if finance_score > 0:
         keyword_scores['Finance'] = finance_score
-        print(f"💰 Finance score: {finance_score}")
+        print(f"Finance score: {finance_score}")
     
     # Food keywords with context
     food_words = ['recipe', 'ingredients', 'cooking', 'cook', 'preparation', 'serve', 'dish', 'meal']
     food_score = sum(1 for word in food_words if word in content_lower)
     if food_score > 0:
         keyword_scores['Food'] = food_score
-        print(f"🍳 Food score: {food_score}")
+        print(f"Food score: {food_score}")
     
     # Personal keywords with context
     personal_words = ['personal', 'diary', 'journal', 'daily', 'routine', 'morning', 'evening']
     personal_score = sum(1 for word in personal_words if word in content_lower)
     if personal_score > 0:
         keyword_scores['Personal'] = personal_score
-        print(f"📔 Personal score: {personal_score}")
+        print(f"Personal score: {personal_score}")
     
     # Work keywords with context
     work_words = ['meeting', 'agenda', 'project', 'team', 'business', 'company']
     work_score = sum(1 for word in work_words if word in content_lower)
     if work_score > 0:
         keyword_scores['Work'] = work_score
-        print(f"👥 Work score: {work_score}")
+        print(f"Work score: {work_score}")
     
     # Technical keywords with context
     tech_words = ['technical', 'software', 'algorithm', 'programming', 'code', 'system']
     tech_score = sum(1 for word in tech_words if word in content_lower)
     if tech_score > 0:
         keyword_scores['Technical'] = tech_score
-        print(f"💻 Technical score: {tech_score}")
+        print(f"Technical score: {tech_score}")
     
     if not keyword_scores:
-        print("❌ No meaningful keywords found")
+        print("No meaningful keywords found")
         return None
     
     # Get the highest scoring category
@@ -1586,10 +1586,10 @@ def careful_keyword_analysis(content_lower, original_content):
     if best_category[1] >= 2:
         subcategory = get_smart_subcategory(content_lower, best_category[0])
         result = f"{best_category[0]}: {subcategory}"
-        print(f"✅ CAREFUL ANALYSIS RESULT: {result}")
+        print(f"CAREFUL ANALYSIS RESULT: {result}")
         return result
     
-    print(f"❌ Insufficient confidence (best score: {best_category[1]})")
+    print(f"Insufficient confidence (best score: {best_category[1]})")
     return None
 
 def get_smart_subcategory(content, category):
@@ -1670,7 +1670,7 @@ def analyze_content_themes(content, embedding, model):
         'Health: Medical': health_score
     }
     
-    print(f"🧠 THEME SCORES: {scores}")
+    print(f"THEME SCORES: {scores}")
     
     # REQUIRE MINIMUM CONFIDENCE
     best_category = max(scores.items(), key=lambda x: x[1])
@@ -1744,7 +1744,7 @@ def intelligent_keyword_analysis(content_lower):
         if score > 0:
             scores[category] = score
     
-    print(f"🔍 KEYWORD SCORES: {scores}")
+    print(f"KEYWORD SCORES: {scores}")
     
     if not scores:
         return None
@@ -2016,10 +2016,10 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                         "tags": tags if 'tags' in locals() else []
                     })
 
-                    print(f"✅ Successfully processed {fname}")
+                    print(f"Successfully processed {fname}")
 
                 except Exception as file_error:
-                    print(f"❌ ERROR processing file {fname}: {file_error}")
+                    print(f"ERROR processing file {fname}: {file_error}")
                     continue
 
             print(f"\n=== COMPREHENSIVE AI SCAN COMPLETE ===")
@@ -2029,7 +2029,7 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                     "processed_files": processed_files}
 
         except Exception as e:
-            print(f"\n❌ FATAL ERROR in scan_folder(): {e}")
+            print(f"\nFATAL ERROR in scan_folder(): {e}")
             import traceback
             traceback.print_exc()
             exception = e
@@ -2343,15 +2343,15 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
     returns suggested target categories/folders. Movement in Drive is optional
     and should be performed client-side using the user's OAuth token.
     """
-    print("🚨🚨🚨 ORGANIZE_DRIVE_FILES ENDPOINT CALLED! 🚨🚨🚨")
-    print(f"🚨 Processing {len(req.files)} files")
-    print("🚨🚨🚨 USING SMART CONTENT ANALYSIS! 🚨🚨🚨")
+    print("ORGANIZE_DRIVE_FILES ENDPOINT CALLED!")
+    print(f"Processing {len(req.files)} files")
+    print("USING SMART CONTENT ANALYSIS!")
     
     organized = []
     move_performed = False
     drive_service = None
     if req.move and req.auth_token:
-        drive_service = get_drive_service(req.auth_token)
+        {{ ... }}
 
     # USE SMART CONTENT ANALYSIS FOR EACH FILE
     for f in req.files:
@@ -2360,20 +2360,20 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
             continue
 
         file_name = f.name or ""
-        print(f"🔍 ANALYZING FILE: {file_name}")
+        print(f"ANALYZING FILE: {file_name}")
 
         # SMART CATEGORIZATION WITH CONTENT ANALYSIS
         try:
             if req.override_category:
                 category_name = req.override_category
                 category_id = None
-                print(f"📌 Using override category: {category_name}")
+                print(f"Using override category: {category_name}")
             else:
                 # DOWNLOAD AND ANALYZE FILE CONTENT
-                print(f"📥 Downloading file for content analysis...")
+                print(f"Downloading file for content analysis...")
                 path = drive_download_file(req.auth_token, f.id, tempfile.gettempdir())
                 if not path:
-                    print(f"❌ Failed to download {file_name}")
+                    print(f"Failed to download {file_name}")
                     category_name = "DOWNLOAD_FAILED"
                     category_id = None
                 else:
@@ -2390,18 +2390,18 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                     else:
                         text = read_text_file(path)
                     
-                    print(f"📄 Extracted {len(text) if text else 0} chars from {file_name}")
+                    print(f"Extracted {len(text) if text else 0} chars from {file_name}")
                     
                     # USE SMART CATEGORIZATION
                     if text and len(text.strip()) > 10:
                         cat_id, category_name = assign_category_from_summary("", text)
                         if category_name == "CATEGORIZATION_FAILED":
-                            print(f"❌ Could not categorize {file_name}")
+                            print(f"Could not categorize {file_name}")
                             category_name = "UNCATEGORIZABLE"
                         else:
-                            print(f"✅ Categorized {file_name} as: {category_name}")
+                            print(f"Categorized {file_name} as: {category_name}")
                     else:
-                        print(f"❌ No content extracted from {file_name}")
+                        print(f"No content extracted from {file_name}")
                         category_name = "NO_CONTENT"
                     
                     category_id = None
@@ -2413,7 +2413,7 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                         pass
 
         except Exception as e:
-            print(f"❌ Error analyzing file {f.name}: {e}")
+            print(f"Error analyzing file {f.name}: {e}")
             import traceback
             traceback.print_exc()
             category_id, category_name = None, "ANALYSIS_ERROR"
@@ -2428,9 +2428,9 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                 moved = move_file_to_folder(drive_service, f.id, target_folder_id)
                 if moved and moved.get('id'):
                     move_performed = True
-                    print(f"✅ Successfully moved {f.name} to folder {req.override_category or category_name}")
+                    print(f"Successfully moved {f.name} to folder {req.override_category or category_name}")
                 else:
-                    print(f"❌ Failed to move {f.name} to folder {req.override_category or category_name}")
+                    print(f"Failed to move {f.name} to folder {req.override_category or category_name}")
 
         organized.append({
             "id": f.id,

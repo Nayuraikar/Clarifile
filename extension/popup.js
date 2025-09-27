@@ -10,11 +10,11 @@ function showStatus(message, type = 'info') {
   let loadingSpinner = '';
 
   if (type === 'success') {
-    icon = '✅';
+    icon = '[OK]';
   } else if (type === 'error') {
-    icon = '❌';
+    icon = '[ERROR]';
   } else if (type === 'info') {
-    icon = 'ℹ️';
+    icon = '[INFO]';
     loadingSpinner = '<span class="loading-dots"><span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span></span>';
   }
 
@@ -172,10 +172,10 @@ document.getElementById('organize').addEventListener('click', async () => {
     }
 
     showStatus(`Starting AI analysis of ${files.length} files...`, 'info');
-    out.textContent = `🔍 Analyzing ${files.length} files with AI...\n\n`;
+    out.textContent = `Analyzing ${files.length} files with AI...\n\n`;
 
     // Show initial progress with loading animation
-    let progressText = `📊 Progress: 0/${files.length} files analyzed\n⏳ Processing...`;
+    let progressText = `Progress: 0/${files.length} files analyzed\nProcessing...`;
     out.textContent += progressText;
 
     const res = await fetch('http://127.0.0.1:4000/drive/organize', {
@@ -206,12 +206,12 @@ document.getElementById('organize').addEventListener('click', async () => {
         const currentFile = organized[completedFiles - 1];
         const fileName = currentFile ? currentFile.name : 'Unknown file';
 
-        progressText = `📊 Progress: ${completedFiles}/${files.length} files analyzed (${progress}%)\n`;
-        progressText += `✅ Last processed: ${fileName}\n`;
-        progressText += `📁 Category: ${currentFile ? currentFile.proposed_category : 'Unknown'}\n`;
-        progressText += `⏳ ${completedFiles < files.length ? 'Processing next file...' : 'Finalizing...'}`;
+        progressText = `Progress: ${completedFiles}/${files.length} files analyzed (${progress}%)\n`;
+        progressText += `Last processed: ${fileName}\n`;
+        progressText += `Category: ${currentFile ? currentFile.proposed_category : 'Unknown'}\n`;
+        progressText += `${completedFiles < files.length ? 'Processing next file...' : 'Finalizing...'}`;
 
-        out.textContent = `🔍 Analyzing ${files.length} files with AI...\n\n${progressText}`;
+        out.textContent = `Analyzing ${files.length} files with AI...\n\n${progressText}`;
       }
     }, 800); // Update every 800ms
 
@@ -232,18 +232,18 @@ document.getElementById('organize').addEventListener('click', async () => {
     showStatus('Organization complete! Check your Clarifile dashboard.', 'success');
 
     // Format the final output nicely with enhanced formatting
-    let summary = `✅ Successfully analyzed ${files.length} files!\n\n📋 Organization Summary:\n`;
+    let summary = `Successfully analyzed ${files.length} files!\n\nOrganization Summary:\n`;
 
     if (organized.length > 0) {
         summary += organized.map(item => {
-            const fileSummary = item.summary ? `\n   📝 Summary: ${item.summary.substring(0, 100)}${item.summary.length > 100 ? '...' : ''}` : '';
+            const fileSummary = item.summary ? `\n   Summary: ${item.summary.substring(0, 100)}${item.summary.length > 100 ? '...' : ''}` : '';
             return `• ${item.name} → ${item.proposed_category}${fileSummary}`;
         }).join('\n');
     } else {
         summary += 'No files were organized.';
     }
 
-    summary += `\n\n🎉 Open your Clarifile dashboard to review and approve the suggestions.`;
+    summary += `\n\nOpen your Clarifile dashboard to review and approve the suggestions.`;
 
     out.textContent = summary;
 
@@ -252,9 +252,9 @@ document.getElementById('organize').addEventListener('click', async () => {
     showStatus(' Organization failed: ' + errorMsg, 'error');
 
     if (errorMsg.includes('127.0.0.1:4000')) {
-      out.textContent = `❌ Cannot connect to Clarifile server.\n\nPlease make sure:\n1. Clarifile is running on your computer\n2. The server is accessible at http://127.0.0.1:4000\n3. Check your firewall settings`;
+      out.textContent = `Cannot connect to Clarifile server.\n\nPlease make sure:\n1. Clarifile is running on your computer\n2. The server is accessible at http://127.0.0.1:4000\n3. Check your firewall settings`;
     } else {
-      out.textContent = `❌ Error: ${errorMsg}\n\nPlease try again or contact support if the issue persists.`;
+      out.textContent = `Error: ${errorMsg}\n\nPlease try again or contact support if the issue persists.`;
     }
 
   } finally {

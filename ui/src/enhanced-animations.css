@@ -4180,7 +4180,7 @@ button:disabled svg,
 }
 
 .proposal-category::before {
-  content: "📁";
+  content: "[FOLDER]";
   font-size: 1rem;
 }
 
@@ -4514,6 +4514,9 @@ button:disabled svg,
     linear-gradient(#fff 0 0) padding-box, 
     linear-gradient(#fff 0 0);
   -webkit-mask-composite: destination-out;
+  mask: 
+    linear-gradient(#fff 0 0) padding-box, 
+    linear-gradient(#fff 0 0);
   mask-composite: exclude;
   pointer-events: none;
   opacity: 0;
@@ -5908,7 +5911,8 @@ button[data-tone="success"] {
 
 /* Loading States */
 .loading-skeleton {
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  -webkit-mask: linear-gradient(-60deg, #000 30%, #0005, #000 70%) right/300% 100%;
+  mask: linear-gradient(-60deg, #000 30%, #0005, #000 70%) right/300% 100%;
   background-size: 200% 100%;
   animation: loadingSkeleton 1.5s infinite;
   border-radius: 8px;
