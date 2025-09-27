@@ -2066,19 +2066,132 @@ def approve(file_id: int, final_label: str):
 @app.get("/categories")
 def categories():
     """
-    Returns a list of categories with counts of files that have been approved with that category.
-    Only considers 'final_label' for each file.
+    Returns a comprehensive list of categories from multiple sources:
+    1. Database final_label (approved files)
+    2. Database proposed_category (pending files) 
+    3. Enhanced categorization results
+    4. Google Drive folders (if available)
     """
     cur = conn.cursor()
+    
+    # Get approved categories from database
     cur.execute("""
-        SELECT final_label, COUNT(*) AS file_count
+        SELECT final_label as category, COUNT(*) AS file_count, 'approved' as source
         FROM files
         WHERE final_label IS NOT NULL AND final_label != ''
         GROUP BY final_label
-        ORDER BY file_count DESC
     """)
-    rows = cur.fetchall()
-    return [{"name": r[0], "file_count": r[1]} for r in rows]
+    approved_rows = cur.fetchall()
+    
+    # Get proposed categories from database
+    cur.execute("""
+        SELECT proposed_category as category, COUNT(*) AS file_count, 'proposed' as source
+        FROM files
+        WHERE proposed_category IS NOT NULL AND proposed_category != ''
+        GROUP BY proposed_category
+    """)
+    proposed_rows = cur.fetchall()
+    
+    # Combine and deduplicate categories
+    category_map = {}
+    
+    # Add approved categories
+    for row in approved_rows:
+        category, count, source = row
+        if category not in category_map:
+            category_map[category] = {
+                "name": category,
+                "approved_count": 0,
+                "proposed_count": 0,
+                "total_count": 0
+            }
+        category_map[category]["approved_count"] = count
+        category_map[category]["total_count"] += count
+    
+    # Add proposed categories
+    for row in proposed_rows:
+        category, count, source = row
+        if category not in category_map:
+            category_map[category] = {
+                "name": category,
+                "approved_count": 0,
+                "proposed_count": 0,
+                "total_count": 0
+            }
+        category_map[category]["proposed_count"] = count
+        category_map[category]["total_count"] += count
+    
+    # Convert to list and sort by total count
+    categories = list(category_map.values())
+    categories.sort(key=lambda x: x["total_count"], reverse=True)
+    
+    return categories
+
+@app.get("/enhanced_categories")
+def enhanced_categories(auth_token: str | None = Query(None)):
+    """
+    Enhanced categories endpoint that includes Google Drive folder information.
+    Combines database categories with actual Drive folders.
+    """
+    try:
+        # Get base categories from database
+        base_categories = categories()
+        
+        # If we have a Drive token, also fetch Drive folder information
+        if auth_token:
+            try:
+                drive_service = get_drive_service(auth_token)
+                if drive_service:
+                    # Get all folders in My Drive
+                    results = drive_service.files().list(
+                        q="mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",
+                        fields="files(id, name, createdTime, modifiedTime)"
+                    ).execute()
+                    
+                    drive_folders = results.get('files', [])
+                    
+                    # Create a map of existing categories
+                    category_map = {cat["name"]: cat for cat in base_categories}
+                    
+                    # Add Drive folder information
+                    for folder in drive_folders:
+                        folder_name = folder["name"]
+                        if folder_name in category_map:
+                            # Update existing category with Drive info
+                            category_map[folder_name]["drive_folder_id"] = folder["id"]
+                            category_map[folder_name]["drive_created"] = folder.get("createdTime")
+                            category_map[folder_name]["has_drive_folder"] = True
+                        else:
+                            # Add new category for Drive folder
+                            category_map[folder_name] = {
+                                "name": folder_name,
+                                "approved_count": 0,
+                                "proposed_count": 0,
+                                "total_count": 0,
+                                "drive_folder_id": folder["id"],
+                                "drive_created": folder.get("createdTime"),
+                                "has_drive_folder": True
+                            }
+                    
+                    # Convert back to list and sort
+                    enhanced_categories = list(category_map.values())
+                    enhanced_categories.sort(key=lambda x: x["total_count"], reverse=True)
+                    
+                    return enhanced_categories
+                    
+            except Exception as e:
+                print(f"Error fetching Drive folders: {e}")
+        
+        # Fallback to base categories if Drive access fails
+        for cat in base_categories:
+            cat["has_drive_folder"] = False
+        
+        return base_categories
+        
+    except Exception as e:
+        print(f"Error in enhanced_categories: {e}")
+        # Return empty list if everything fails
+        return []
 
 @app.get("/categories_with_files")
 def categories_with_files():
@@ -2443,11 +2556,18 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
             category_id, category_name = None, "ANALYSIS_ERROR"
 
         target_folder_id = None
+        moved = None
         if req.move and drive_service:
             # Ensure folder is created in My Drive root (no parent) OR allow future parent selection
             target_folder_id = get_or_create_folder(drive_service, (req.override_category or category_name or "Other"), None)
-            if moved and moved.get('id'):
-                move_performed = True
+            if target_folder_id:
+                # Actually move the file to the target folder
+                moved = move_file_to_folder(drive_service, f.id, target_folder_id)
+                if moved and moved.get('id'):
+                    move_performed = True
+                    print(f"✅ Successfully moved {f.name} to folder {req.override_category or category_name}")
+                else:
+                    print(f"❌ Failed to move {f.name} to folder {req.override_category or category_name}")
 
         organized.append({
             "id": f.id,

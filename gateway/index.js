@@ -161,6 +161,18 @@ app.get('/categories', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
+// Enhanced categories with Drive folder information
+app.get('/enhanced_categories', async (req, res) => {
+  try {
+    const auth_token = DRIVE_TOKEN || req.query.auth_token;
+    const url = auth_token ? `${PARSER}/enhanced_categories?auth_token=${auth_token}` : `${PARSER}/enhanced_categories`;
+    const r = await axios.get(url);
+    res.json(r.data);
+  } catch (e) { 
+    res.status(500).json({ error: e.toString() }); 
+  }
+});
+
 app.get('/proposals', async (req, res) => {
   try { const r = await axios.get(`${PARSER}/list_proposals`); res.json(r.data); }
   catch (e) { res.status(500).json({ error: e.toString() }); }
