@@ -23,19 +23,14 @@ from smart_categorizer import SmartCategorizer
 import nlp
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
-
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 
 # --- Paths & constants ---
 DB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "metadata_db", "clarifile.db")
-SAMPLE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "storage", "sample_files")
-ORGANIZED_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "storage", "organized_demo")
 ALLOWED_EXTS = {
     ".txt", ".pdf", ".png", ".jpg", ".jpeg",
     ".mp3", ".wav", ".mp4", ".mkv", ".mpeg"
 }
-BASE = "http://127.0.0.1:8000"
 
 app = FastAPI()
 
@@ -272,16 +267,29 @@ EMBED_SERVICE = os.getenv("EMBED_SERVICE", "http://127.0.0.1:8002")
 # Initialize smart categorizer for content-based categorization
 smart_categorizer = SmartCategorizer()
 
-# Whisper for audio/video transcription
-whisper_model = whisper.load_model("base")
+# Lazy loading for heavy models
+whisper_model = None
+cv_model = None
+transform = None
 
-# CV model for image/video classification
-cv_model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-cv_model.eval()
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-])
+def get_whisper_model():
+    global whisper_model
+    if whisper_model is None:
+        print("Loading Whisper model...")
+        whisper_model = whisper.load_model("base")
+    return whisper_model
+
+def get_cv_model():
+    global cv_model, transform
+    if cv_model is None:
+        print("Loading CV model...")
+        cv_model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+        cv_model.eval()
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ])
+    return cv_model, transform
 
 # --- DB init ---
 def init_db():
@@ -502,6 +510,7 @@ def extract_text_from_image(path):
 # --- Audio/Video + CV ---
 def classify_image(img_path):
     try:
+        cv_model, transform = get_cv_model()
         img = Image.open(img_path).convert("RGB")
         tensor = transform(img).unsqueeze(0)
         with torch.no_grad():
@@ -514,6 +523,7 @@ def classify_image(img_path):
 
 def transcribe_audio(path):
     try:
+        whisper_model = get_whisper_model()
         result = whisper_model.transcribe(path)
         return result["text"]
     except Exception as e:
@@ -2242,59 +2252,6 @@ def file_summary(file_id: int):
         "tags": json.loads(row[6]) if row[6] else []
     }
 
-@app.get("/debug_text")
-def debug_text(file_id: int):
-    c = conn.cursor()
-    c.execute("SELECT chunk_text FROM chunks WHERE file_id=?", (file_id,))
-    rows = c.fetchall()
-    return {"chunks": [r[0] for r in rows]}
-
-@app.get("/file_entities")
-def file_entities(file_id: int):
-    cur = conn.cursor()
-    cur.execute("""
-      SELECT e.name, e.type, fe.count
-      FROM file_entities fe
-      JOIN entities e ON e.id = fe.entity_id
-      WHERE fe.file_id=?
-      ORDER BY fe.count DESC, e.name ASC
-    """, (file_id,))
-    rows = cur.fetchall()
-    return [{"name": r[0], "type": r[1], "count": r[2]} for r in rows]
-
-@app.get("/entity_graph")
-def entity_graph(min_count: int = 1, types: Optional[str] = None):
-    cur = conn.cursor()
-    type_filter = [t.strip() for t in types.split(",")] if types else []
-    if type_filter:
-        q = f"""
-            SELECT e.id, e.name, e.type, SUM(fe.count) as total
-            FROM entities e
-            JOIN file_entities fe ON fe.entity_id=e.id
-            WHERE e.type IN ({','.join('?'*len(type_filter))})
-            GROUP BY e.id
-            HAVING total >= ?
-        """
-        cur.execute(q, (*type_filter, min_count))
-    else:
-        cur.execute("""
-            SELECT e.id, e.name, e.type, SUM(fe.count) as total
-            FROM entities e
-            JOIN file_entities fe ON fe.entity_id=e.id
-            GROUP BY e.id
-            HAVING total >= ?
-        """, (min_count,))
-    nodes = [{"id": r[0], "name": r[1], "type": r[2], "count": r[3]} for r in cur.fetchall()]
-    node_ids = set(n["id"] for n in nodes)
-    if not node_ids:
-        return {"nodes": [], "edges": []}
-    qmarks = ",".join("?" * len(node_ids))
-    cur.execute(f"""
-        SELECT a,b,weight FROM entity_edges
-        WHERE a IN ({qmarks}) AND b IN ({qmarks})
-    """, (*node_ids, *node_ids))
-    edges = [{"a": r[0], "b": r[1], "weight": r[2]} for r in cur.fetchall()]
-    return {"nodes": nodes, "edges": edges}
 
 @app.get("/ask")
 def ask(file_id: int = Query(...), q: str = Query(...)):
@@ -2377,100 +2334,6 @@ def reindex():
     except:
         return {"status": "reindexed", "message": "Indexer service not available"}
 
-@app.get("/duplicates")
-def duplicates():
-    """
-    Detect duplicate files stored locally by exact content hash (byte-for-byte).
-    Returns groups with at least 2 files.
-    """
-    try:
-        c = conn.cursor()
-        c.execute("SELECT id, file_path, file_name FROM files WHERE file_path IS NOT NULL")
-        rows = c.fetchall()
-        if not rows:
-            return {"summary": {"duplicate_groups_found": 0, "total_files_processed": 0}, "duplicates": []}
-
-        import hashlib, os
-        def hash_file(path: str) -> str:
-            h = hashlib.sha256()
-            with open(path, "rb") as f:
-                for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                    h.update(chunk)
-            return h.hexdigest()
-
-        hash_to_files = {}
-        total_existing = 0
-        for fid, fpath, fname in rows:
-            if not fpath:
-                continue
-            npath = os.path.normcase(os.path.abspath(fpath))
-            if not os.path.exists(npath):
-                continue
-            total_existing += 1
-            try:
-                fh = hash_file(npath)
-            except Exception:
-                continue
-            lst = hash_to_files.setdefault(fh, [])
-            if not any(x["path"] == npath for x in lst):
-                lst.append({"id": fid, "name": fname or os.path.basename(npath), "path": npath})
-
-        groups = []
-        gnum = 1
-        for hval, files in hash_to_files.items():
-            if len(files) >= 2:
-                files_sorted = sorted(files, key=lambda f: (f["name"].lower(), f["path"].lower()))
-                groups.append({
-                    "group_id": f"group_{gnum}",
-                    "file_count": len(files_sorted),
-                    "files": files_sorted
-                })
-                gnum += 1
-
-        return {
-            "summary": {"duplicate_groups_found": len(groups), "total_files_processed": total_existing},
-            "duplicates": groups
-        }
-    except Exception as e:
-        return {"error": str(e), "summary": {"duplicate_groups_found": 0, "total_files_processed": 0}, "duplicates": []}
-
-@app.post("/resolve_duplicate")
-def resolve_duplicate(file_a: int, file_b: int, action: str):
-    """
-    Keep one, delete the other from disk, and update statuses.
-    action: 'keep_a' or 'keep_b'
-    """
-    if action not in ("keep_a", "keep_b"):
-        raise HTTPException(status_code=400, detail="action must be keep_a or keep_b")
-    cur = conn.cursor()
-    cur.execute("SELECT id, file_path, file_name FROM files WHERE id IN (?, ?)", (file_a, file_b))
-    rows = cur.fetchall()
-    if len(rows) != 2:
-        raise HTTPException(status_code=404, detail="One or both files not found")
-    m = {r[0]: {"id": r[0], "path": r[1], "name": r[2]} for r in rows}
-    a, b = m[file_a], m[file_b]
-    import os
-    a_path = os.path.normcase(os.path.abspath(a["path"])) if a.get("path") else None
-    b_path = os.path.normcase(os.path.abspath(b["path"])) if b.get("path") else None
-    try:
-        if action == "keep_a":
-            if b_path and os.path.exists(b_path):
-                try: os.remove(b_path)
-                except Exception: pass
-            cur.execute("UPDATE files SET status=? WHERE id=?", ("removed_duplicate", file_b))
-            cur.execute("UPDATE files SET status=? WHERE id=?", ("approved", file_a))
-            conn.commit()
-            return {"status": "resolved", "kept": a, "deleted": b_path}
-        else:
-            if a_path and os.path.exists(a_path):
-                try: os.remove(a_path)
-                except Exception: pass
-            cur.execute("UPDATE files SET status=? WHERE id=?", ("removed_duplicate", file_a))
-            cur.execute("UPDATE files SET status=? WHERE id=?", ("approved", file_b))
-            conn.commit()
-            return {"status": "resolved", "kept": b, "deleted": a_path}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Google Drive integration ---

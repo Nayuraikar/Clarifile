@@ -42,12 +42,6 @@ try:
 except:
     PDF2IMAGE = False
 
-# optional FAISS for fast similarity search
-try:
-    import faiss
-    FAISS_AVAILABLE = True
-except:
-    FAISS_AVAILABLE = False
 
 # ---------- helpers ----------
 def extract_text(path, max_chars=20000, ocr_if_empty=True):

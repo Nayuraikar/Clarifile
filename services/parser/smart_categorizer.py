@@ -7,8 +7,6 @@ Integrates with Clarifile's existing parser service.
 
 import os
 import json
-import shutil
-import argparse
 from tqdm import tqdm
 import numpy as np
 
@@ -22,8 +20,6 @@ import pytesseract
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics import silhouette_score
-from sklearn.metrics.pairwise import cosine_similarity
 
 # Optional: if you installed pdf2image and want OCR fallback for scanned PDFs
 try:
@@ -39,7 +35,6 @@ class SmartCategorizer:
         """Initialize the categorizer with the embedding model."""
         self.model_name = model_name
         self.model = None
-        self.embeddings_cache = {}
 
     def load_model(self):
         """Load the sentence transformer model."""

@@ -13,7 +13,7 @@ import logging
 from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI
-from PyPDF2 import PdfReader
+import fitz  # PyMuPDF
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -60,10 +60,11 @@ def compute_exact_content_hash(filepath: str) -> Optional[str]:
         # PDFs: extract text → normalize → hash
         if ext == ".pdf":
             try:
-                reader = PdfReader(filepath)
+                doc = fitz.open(filepath)
                 text_parts: List[str] = []
-                for page in reader.pages:
-                    text_parts.append(page.extract_text() or "")
+                for page in doc:
+                    text_parts.append(page.get_text() or "")
+                doc.close()
                 normalized = normalize_text_content("".join(text_parts))
                 data = normalized.encode("utf-8")
                 return _hash_bytes(data) if data else "empty_file_hash"

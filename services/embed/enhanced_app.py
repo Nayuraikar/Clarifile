@@ -8,9 +8,8 @@ from fastapi import FastAPI, HTTPException
 import sqlite3, os, numpy as np
 from sentence_transformers import SentenceTransformer
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 import json
-from pathlib import Path
 
 # Import our enhanced categorization
 import sys
