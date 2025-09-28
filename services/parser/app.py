@@ -1538,47 +1538,211 @@ def understand_content_meaning(content):
 
 def careful_keyword_analysis(content_lower, original_content):
     """
-    Careful keyword analysis that actually considers context.
+    Enhanced keyword analysis with comprehensive category detection.
+    Analyzes content to determine the most relevant category based on keyword matching.
     """
     print("PERFORMING CAREFUL KEYWORD ANALYSIS")
     
     # Count meaningful keywords with context
     keyword_scores = {}
     
-    # Finance keywords with context
-    finance_words = ['invoice', 'bill', 'payment', 'amount', 'total', 'due', 'customer']
-    finance_score = sum(1 for word in finance_words if word in content_lower)
+    # Education - Academic content (check FIRST to catch exam documents before news)
+    education_keywords = ['exam', 'test', 'student', 'course', 'lecture', 'assignment', 'grade', 
+                         'university', 'college', 'school', 'academic', 'hall ticket', 'admission',
+                         'roll number', 'candidate', 'examination', 'semester', 'marks', 'result',
+                         'education', 'learning', 'study', 'research', 'thesis', 'dissertation',
+                         'professor', 'teacher', 'faculty', 'principal', 'dean', 'chancellor',
+                         'syllabus', 'curriculum', 'degree', 'diploma', 'certificate', 'scholarship',
+                         'candidate name', 'seating number', 'exam date', 'reporting time', 'test centre']
+    education_score = sum(1 for word in education_keywords if word in content_lower)
+    if education_score > 0:
+        keyword_scores['Education'] = education_score * 1.2  # Higher weight for education
+        print(f"Education score: {education_score} (weighted: {education_score * 1.2})")
+    
+    # News/Media - Check AFTER education to avoid conflicts
+    news_keywords = ['breaking news', 'news report', 'journalist', 'reporter', 'media coverage', 'press conference',
+                    'headline', 'news article', 'story coverage', 'news interview', 'news statement',
+                    'press release', 'news bulletin', 'news update', 'news alert',
+                    'sources say', 'according to reports', 'reported today', 'confirmed by',
+                    'investigation reveals', 'exclusive report', 'live updates', 'news correspondent', 
+                    'news bureau', 'breaking story', 'developing story']
+    news_score = sum(1 for word in news_keywords if word in content_lower)
+    if news_score > 0:
+        keyword_scores['News'] = news_score
+        print(f"News score: {news_score}")
+    
+    # Government/Administrative - Check BEFORE legal to catch govt documents
+    govt_keywords = ['government notification', 'ministry', 'department', 'bureau', 'commission',
+                    'authority', 'board', 'committee', 'council', 'assembly', 'parliament',
+                    'legislature', 'cabinet', 'minister', 'secretary', 'officer', 'official',
+                    'circular', 'directive', 'policy', 'scheme', 'program', 'initiative',
+                    'administration', 'bureaucracy', 'civil service', 'ias', 'ips', 'ifs',
+                    'gazette', 'ordinance', 'resolution', 'budget', 'allocation', 'fund']
+    govt_score = sum(1 for word in govt_keywords if word in content_lower)
+    if govt_score > 0:
+        keyword_scores['Government'] = govt_score * 1.1  # Slight boost for official documents
+        print(f"Government score: {govt_score} (weighted: {govt_score * 1.1})")
+    
+    # Legal/Judicial - More specific legal terms to avoid over-matching
+    legal_keywords = ['honorable court', 'court hereby orders', 'verdict', 'ruling', 'judgment', 
+                     'lawsuit', 'litigation', 'hearing', 'trial', 'proceeding', 'petition',
+                     'appeal', 'writ', 'summons', 'subpoena', 'affidavit', 'testimony', 'witness',
+                     'plaintiff', 'defendant', 'counsel', 'attorney', 'advocate', 'barrister',
+                     'magistrate', 'sessions', 'bail', 'custody', 'sentence', 'fine', 'penalty',
+                     'injunction', 'stay order', 'interim order', 'ex-parte', 'suo moto',
+                     'case no', 'criminal case', 'civil case', 'family court', 'high court']
+    legal_score = sum(1 for word in legal_keywords if word in content_lower)
+    if legal_score > 0:
+        keyword_scores['Legal'] = legal_score * 1.15  # Higher weight for legal documents
+        print(f"Legal score: {legal_score} (weighted: {legal_score * 1.15})")
+    
+    # Finance - Money related
+    finance_keywords = ['invoice', 'bill', 'payment', 'money', 'cost', 'price', 'dollar', '$', 
+                       'rupee', '₹', 'amount', 'salary', 'account', 'bank', 'transaction', 
+                       'receipt', 'due date', 'total', 'tax', 'gst', 'income', 'expense',
+                       'budget', 'financial', 'economic', 'investment', 'loan', 'credit',
+                       'debit', 'balance', 'statement', 'audit', 'accounting', 'finance']
+    finance_score = sum(1 for word in finance_keywords if word in content_lower)
     if finance_score > 0:
         keyword_scores['Finance'] = finance_score
         print(f"Finance score: {finance_score}")
     
-    # Food keywords with context
-    food_words = ['recipe', 'ingredients', 'cooking', 'cook', 'preparation', 'serve', 'dish', 'meal']
-    food_score = sum(1 for word in food_words if word in content_lower)
-    if food_score > 0:
-        keyword_scores['Food'] = food_score
-        print(f"Food score: {food_score}")
-    
-    # Personal keywords with context
-    personal_words = ['personal', 'diary', 'journal', 'daily', 'routine', 'morning', 'evening']
-    personal_score = sum(1 for word in personal_words if word in content_lower)
-    if personal_score > 0:
-        keyword_scores['Personal'] = personal_score
-        print(f"Personal score: {personal_score}")
-    
-    # Work keywords with context
-    work_words = ['meeting', 'agenda', 'project', 'team', 'business', 'company']
-    work_score = sum(1 for word in work_words if word in content_lower)
+    # Work/Business - Professional content (check after legal/government)
+    work_keywords = ['meeting', 'project', 'deadline', 'work', 'business', 'office', 'colleague',
+                    'client', 'presentation', 'report', 'task', 'professional', 'partnership',
+                    'discussion', 'agenda', 'action items', 'met', 'discussed', 'corporate',
+                    'company', 'organization', 'management', 'executive', 'director', 'ceo',
+                    'conference', 'seminar', 'workshop', 'training', 'development']
+    work_score = sum(1 for word in work_keywords if word in content_lower)
     if work_score > 0:
         keyword_scores['Work'] = work_score
         print(f"Work score: {work_score}")
     
-    # Technical keywords with context
-    tech_words = ['technical', 'software', 'algorithm', 'programming', 'code', 'system']
-    tech_score = sum(1 for word in tech_words if word in content_lower)
+    # Cooking/Food - Recipes, cooking instructions, food content
+    cooking_keywords = ['recipe', 'cooking', 'cook', 'ingredients', 'preparation', 'instructions',
+                       'kitchen', 'food', 'dish', 'meal', 'breakfast', 'lunch', 'dinner', 'snack',
+                       'bake', 'baking', 'fry', 'boil', 'grill', 'roast', 'steam', 'saute',
+                       'tablespoon', 'teaspoon', 'cup', 'oven', 'stove', 'pan', 'pot',
+                       'salt', 'pepper', 'spice', 'seasoning', 'flavor', 'taste', 'delicious',
+                       'cuisine', 'restaurant', 'chef', 'culinary', 'menu', 'appetizer',
+                       'main course', 'dessert', 'beverage', 'drink', 'cocktail', 'wine',
+                       'vegetarian', 'vegan', 'healthy', 'nutrition', 'calories', 'diet']
+    cooking_score = sum(1 for word in cooking_keywords if word in content_lower)
+    if cooking_score > 0:
+        keyword_scores['Cooking'] = cooking_score
+        print(f"Cooking score: {cooking_score}")
+    
+    # Entertainment - Movies, music, games, shows, fun activities
+    entertainment_keywords = ['movie', 'film', 'cinema', 'theater', 'show', 'series', 'episode',
+                             'music', 'song', 'album', 'artist', 'singer', 'band', 'concert',
+                             'game', 'gaming', 'video game', 'play', 'player', 'entertainment',
+                             'fun', 'enjoy', 'comedy', 'drama', 'action', 'thriller', 'horror',
+                             'romance', 'documentary', 'animation', 'cartoon', 'netflix', 'youtube',
+                             'streaming', 'watch', 'listen', 'dance', 'party', 'celebration',
+                             'festival', 'event', 'performance', 'actor', 'actress', 'director',
+                             'producer', 'soundtrack', 'lyrics', 'melody', 'rhythm', 'beat']
+    entertainment_score = sum(1 for word in entertainment_keywords if word in content_lower)
+    if entertainment_score > 0:
+        keyword_scores['Entertainment'] = entertainment_score
+        print(f"Entertainment score: {entertainment_score}")
+    
+    # Lifestyle/Hobbies - Personal interests, hobbies, lifestyle content
+    lifestyle_keywords = ['hobby', 'interest', 'passion', 'craft', 'diy', 'handmade', 'creative',
+                         'art', 'painting', 'drawing', 'sketch', 'photography', 'photo', 'picture',
+                         'gardening', 'plants', 'flowers', 'garden', 'nature', 'outdoor',
+                         'fitness', 'exercise', 'workout', 'gym', 'yoga', 'meditation', 'wellness',
+                         'fashion', 'style', 'clothing', 'outfit', 'shopping', 'beauty', 'makeup',
+                         'skincare', 'haircare', 'self care', 'relaxation', 'spa', 'massage',
+                         'reading', 'book', 'novel', 'story', 'library', 'author', 'writing',
+                         'blog', 'blogging', 'social media', 'instagram', 'facebook', 'twitter']
+    lifestyle_score = sum(1 for word in lifestyle_keywords if word in content_lower)
+    if lifestyle_score > 0:
+        keyword_scores['Lifestyle'] = lifestyle_score
+        print(f"Lifestyle score: {lifestyle_score}")
+    
+    # Home/Household - Home management, household tasks, domestic content
+    home_keywords = ['home', 'house', 'household', 'cleaning', 'organize', 'decoration', 'furniture',
+                    'interior', 'design', 'renovation', 'repair', 'maintenance', 'chores',
+                    'laundry', 'washing', 'grocery', 'shopping list', 'bills', 'utilities',
+                    'electricity', 'water', 'gas', 'internet', 'cable', 'insurance',
+                    'mortgage', 'rent', 'landlord', 'tenant', 'neighbor', 'community',
+                    'security', 'safety', 'alarm', 'lock', 'key', 'garage', 'basement',
+                    'attic', 'bedroom', 'bathroom', 'kitchen', 'living room', 'dining room']
+    home_score = sum(1 for word in home_keywords if word in content_lower)
+    if home_score > 0:
+        keyword_scores['Home'] = home_score
+        print(f"Home score: {home_score}")
+    
+    # Personal - Enhanced personal content (for remaining personal stuff)
+    personal_keywords = ['hello', 'hi', 'my name', 'personal', 'diary', 'journal', 'reminder',
+                        'voice note', 'memo', 'myself', 'i am', 'family', 'friend', 'conversation',
+                        'thoughts', 'feelings', 'reflection', 'private', 'confidential',
+                        'birthday', 'anniversary', 'vacation', 'holiday', 'weekend', 'leisure',
+                        'dream', 'goal', 'wish', 'hope', 'memory', 'experience', 'story', 'life',
+                        'personal life', 'relationship', 'love', 'marriage', 'children', 'parents',
+                        'siblings', 'relatives', 'emotions', 'mood', 'happy', 'sad', 'excited']
+    personal_score = sum(1 for word in personal_keywords if word in content_lower)
+    if personal_score > 0:
+        keyword_scores['Personal'] = personal_score
+        print(f"Personal score: {personal_score}")
+    
+    # Research/Academic - Research papers, studies, academic work
+    research_keywords = ['research', 'study', 'analysis', 'survey', 'findings', 'conclusion',
+                        'methodology', 'data', 'statistics', 'evidence', 'hypothesis', 'theory',
+                        'publication', 'journal', 'paper', 'article', 'citation', 'reference',
+                        'abstract', 'bibliography', 'peer review', 'scholarly', 'academic']
+    research_score = sum(1 for word in research_keywords if word in content_lower)
+    if research_score > 0:
+        keyword_scores['Research'] = research_score * 1.1  # Slight boost for academic content
+        print(f"Research score: {research_score} (weighted: {research_score * 1.1})")
+    
+    # Medical - Health related
+    medical_keywords = ['doctor', 'medical', 'health', 'symptoms', 'treatment', 'medicine',
+                       'hospital', 'patient', 'diagnosis', 'prescription', 'appointment',
+                       'clinic', 'surgery', 'therapy', 'healthcare', 'physician', 'nurse',
+                       'medical report', 'test results', 'x-ray', 'scan', 'blood test']
+    medical_score = sum(1 for word in medical_keywords if word in content_lower)
+    if medical_score > 0:
+        keyword_scores['Medical'] = medical_score * 1.2  # Higher weight for medical content
+        print(f"Medical score: {medical_score} (weighted: {medical_score * 1.2})")
+    
+    # Property/Real Estate - Property documents, real estate
+    property_keywords = ['property', 'real estate', 'land', 'plot', 'house', 'apartment', 'flat',
+                        'building', 'construction', 'sale deed', 'purchase', 'registry', 'title',
+                        'ownership', 'tenant', 'landlord', 'rent', 'lease', 'mortgage', 'loan',
+                        'valuation', 'survey', 'boundary', 'area', 'square feet', 'acres']
+    property_score = sum(1 for word in property_keywords if word in content_lower)
+    if property_score > 0:
+        keyword_scores['Property'] = property_score
+        print(f"Property score: {property_score}")
+    
+    # Travel - Travel related
+    travel_keywords = ['travel', 'trip', 'vacation', 'flight', 'hotel', 'destination',
+                      'journey', 'booking', 'passport', 'visa', 'itinerary', 'tourism',
+                      'ticket', 'reservation', 'airport', 'railway', 'bus', 'transport']
+    travel_score = sum(1 for word in travel_keywords if word in content_lower)
+    if travel_score > 0:
+        keyword_scores['Travel'] = travel_score
+        print(f"Travel score: {travel_score}")
+    
+    # Sports - Sports content
+    sports_keywords = ['sport', 'game', 'match', 'player', 'team', 'score', 'tournament',
+                      'cricket', 'football', 'basketball', 'tennis', 'goal', 'win', 'competition',
+                      'championship', 'league', 'stadium', 'coach', 'training', 'fitness']
+    sports_score = sum(1 for word in sports_keywords if word in content_lower)
+    if sports_score > 0:
+        keyword_scores['Sports'] = sports_score
+        print(f"Sports score: {sports_score}")
+    
+    # Technology/IT - Technical documents, IT content
+    tech_keywords = ['technology', 'computer', 'software', 'hardware', 'internet', 'website',
+                    'application', 'app', 'system', 'database', 'server', 'network',
+                    'programming', 'code', 'development', 'digital', 'online', 'cyber',
+                    'artificial intelligence', 'ai', 'machine learning', 'data science']
+    tech_score = sum(1 for word in tech_keywords if word in content_lower)
     if tech_score > 0:
-        keyword_scores['Technical'] = tech_score
-        print(f"Technical score: {tech_score}")
+        keyword_scores['Technology'] = tech_score
+        print(f"Technology score: {tech_score}")
     
     if not keyword_scores:
         print("No meaningful keywords found")
