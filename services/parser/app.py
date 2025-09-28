@@ -1,5 +1,5 @@
 # parser/app.py
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -14,7 +14,7 @@ import chardet
 import torch
 import torchvision.transforms as transforms
 from torchvision import models
-import whisper
+# import whisper  # Commented out due to NumPy version conflict
 import cv2
 import sys
 import os
@@ -268,16 +268,16 @@ EMBED_SERVICE = os.getenv("EMBED_SERVICE", "http://127.0.0.1:8002")
 smart_categorizer = SmartCategorizer()
 
 # Lazy loading for heavy models
-whisper_model = None
+# whisper_model = None  # Commented out due to NumPy version conflict
 cv_model = None
 transform = None
 
-def get_whisper_model():
-    global whisper_model
-    if whisper_model is None:
-        print("Loading Whisper model...")
-        whisper_model = whisper.load_model("base")
-    return whisper_model
+# def get_whisper_model():  # Commented out due to NumPy version conflict
+#     global whisper_model
+#     if whisper_model is None:
+#         print("Loading Whisper model...")
+#         whisper_model = whisper.load_model("base")
+#     return whisper_model
 
 def get_cv_model():
     global cv_model, transform
@@ -521,14 +521,19 @@ def classify_image(img_path):
         print("Image classification error:", e)
         return "Unknown image"
 
+# def transcribe_audio(path):  # Commented out due to NumPy version conflict
+#     try:
+#         whisper_model = get_whisper_model()
+#         result = whisper_model.transcribe(path)
+#         return result["text"]
+#     except Exception as e:
+#         print("Whisper error:", e)
+#         return ""
+
 def transcribe_audio(path):
-    try:
-        whisper_model = get_whisper_model()
-        result = whisper_model.transcribe(path)
-        return result["text"]
-    except Exception as e:
-        print("Whisper error:", e)
-        return ""
+    # Placeholder function - Whisper disabled due to NumPy version conflict
+    print("Audio transcription disabled due to NumPy version conflict")
+    return ""
 
 FFMPEG_PATH = "/opt/homebrew/bin/ffmpeg"
 
@@ -2507,6 +2512,636 @@ def drive_extract_insights(file_id: str, auth_token: str):
             os.remove(file_path)
         except Exception:
             pass
+
+# --- Smart Search functionality ---
+import difflib
+import re
+from collections import defaultdict
+
+def smart_search_in_text(text_content, query):
+    """
+    Smart search with fuzzy matching, typo tolerance, and similar word detection.
+    Returns match result with score, context, and match type.
+    """
+    if not text_content or not query:
+        return None
+    
+    text_lower = text_content.lower()
+    query_lower = query.lower().strip()
+    
+    # Split query into words for multi-word search
+    query_words = query_lower.split()
+    
+    # Different search strategies with scores
+    search_results = []
+    
+    # 1. Exact match (highest score)
+    if query_lower in text_lower:
+        match_index = text_lower.find(query_lower)
+        context = extract_context(text_content, match_index, len(query))
+        search_results.append({
+            'score': 1.0,
+            'position': match_index,
+            'context': context,
+            'match_type': 'exact',
+            'matched_text': text_content[match_index:match_index + len(query)]
+        })
+    
+    # 2. Case-insensitive word boundary match
+    pattern = r'\b' + re.escape(query_lower) + r'\b'
+    matches = list(re.finditer(pattern, text_lower))
+    for match in matches:
+        context = extract_context(text_content, match.start(), len(query))
+        search_results.append({
+            'score': 0.95,
+            'position': match.start(),
+            'context': context,
+            'match_type': 'word_boundary',
+            'matched_text': text_content[match.start():match.end()]
+        })
+    
+    # 3. Fuzzy matching for typos (using difflib)
+    words = re.findall(r'\b\w+\b', text_lower)
+    word_positions = {}
+    
+    # Build word position map
+    for match in re.finditer(r'\b\w+\b', text_lower):
+        word = match.group()
+        if word not in word_positions:
+            word_positions[word] = []
+        word_positions[word].append(match.start())
+    
+    # Check each query word for fuzzy matches
+    for query_word in query_words:
+        fuzzy_matches = difflib.get_close_matches(query_word, words, n=5, cutoff=0.7)
+        for fuzzy_word in fuzzy_matches:
+            similarity = difflib.SequenceMatcher(None, query_word, fuzzy_word).ratio()
+            if similarity >= 0.7 and fuzzy_word in word_positions:
+                for pos in word_positions[fuzzy_word]:
+                    context = extract_context(text_content, pos, len(fuzzy_word))
+                    search_results.append({
+                        'score': similarity * 0.8,  # Reduce score for fuzzy matches
+                        'position': pos,
+                        'context': context,
+                        'match_type': 'fuzzy',
+                        'matched_text': fuzzy_word
+                    })
+    
+    # 4. Partial word matching (contains)
+    for query_word in query_words:
+        if len(query_word) >= 4:  # Only for longer words
+            for word in words:
+                if query_word in word and len(word) >= len(query_word):
+                    similarity = len(query_word) / len(word)
+                    if similarity >= 0.6 and word in word_positions:
+                        for pos in word_positions[word]:
+                            context = extract_context(text_content, pos, len(word))
+                            search_results.append({
+                                'score': similarity * 0.6,
+                                'position': pos,
+                                'context': context,
+                                'match_type': 'partial',
+                                'matched_text': word
+                            })
+    
+    # 5. Multi-word proximity search
+    if len(query_words) > 1:
+        proximity_matches = find_proximity_matches(text_lower, query_words, word_positions)
+        search_results.extend(proximity_matches)
+    
+    # 6. Synonym and similar meaning search (basic)
+    synonym_matches = find_synonym_matches(text_lower, query_words, word_positions)
+    search_results.extend(synonym_matches)
+    
+    # Remove duplicates and sort by score
+    unique_results = {}
+    for result in search_results:
+        key = (result['position'], result['match_type'])
+        if key not in unique_results or result['score'] > unique_results[key]['score']:
+            unique_results[key] = result
+    
+    if not unique_results:
+        return None
+    
+    # Return the best match
+    best_match = max(unique_results.values(), key=lambda x: x['score'])
+    return best_match
+
+def extract_context(text, position, match_length):
+    """Extract context around a match position."""
+    start_context = max(0, position - 100)
+    end_context = min(len(text), position + match_length + 100)
+    context = text[start_context:end_context].strip()
+    
+    # Try to start at word boundary
+    if start_context > 0:
+        space_index = context.find(' ')
+        if space_index > 0:
+            context = context[space_index:].strip()
+    
+    return context
+
+def find_proximity_matches(text_lower, query_words, word_positions):
+    """Find matches where query words appear close to each other."""
+    matches = []
+    
+    # Find positions of all query words
+    word_pos_lists = []
+    for word in query_words:
+        fuzzy_matches = difflib.get_close_matches(word, word_positions.keys(), n=3, cutoff=0.8)
+        positions = []
+        for fuzzy_word in fuzzy_matches:
+            positions.extend(word_positions[fuzzy_word])
+        word_pos_lists.append(positions)
+    
+    # Check for proximity (within 50 characters)
+    if len(word_pos_lists) >= 2:
+        for pos1 in word_pos_lists[0]:
+            for pos2 in word_pos_lists[1]:
+                distance = abs(pos1 - pos2)
+                if distance <= 50:  # Words within 50 characters
+                    score = 0.7 * (1 - distance / 50)  # Closer = higher score
+                    context_pos = min(pos1, pos2)
+                    context = extract_context(text_lower, context_pos, distance + 10)
+                    matches.append({
+                        'score': score,
+                        'position': context_pos,
+                        'context': context,
+                        'match_type': 'proximity',
+                        'matched_text': f"proximity match ({distance} chars apart)"
+                    })
+    
+    return matches
+
+def find_synonym_matches(text_lower, query_words, word_positions):
+    """Basic synonym matching for common words."""
+    synonyms = {
+        'document': ['doc', 'file', 'paper', 'report'],
+        'project': ['task', 'work', 'assignment', 'job'],
+        'meeting': ['conference', 'discussion', 'session'],
+        'list': ['items', 'tasks', 'todo', 'checklist'],
+        'invoice': ['bill', 'receipt', 'payment'],
+        'contract': ['agreement', 'deal'],
+        'plan': ['strategy', 'blueprint', 'outline'],
+        'summary': ['overview', 'abstract', 'brief'],
+        'analysis': ['review', 'study', 'examination'],
+        'proposal': ['suggestion', 'recommendation', 'offer']
+    }
+    
+    matches = []
+    for query_word in query_words:
+        if query_word in synonyms:
+            for synonym in synonyms[query_word]:
+                if synonym in word_positions:
+                    for pos in word_positions[synonym]:
+                        context = extract_context(text_lower, pos, len(synonym))
+                        matches.append({
+                            'score': 0.5,
+                            'position': pos,
+                            'context': context,
+                            'match_type': 'synonym',
+                            'matched_text': synonym
+                        })
+    
+    return matches
+
+# --- Search functionality ---
+class SearchRequest(BaseModel):
+    query: str
+
+@app.post("/search_files")
+def search_files(req: SearchRequest, auth_token: str | None = Query(None)):
+    """
+    Search Google Drive files by content. Supports PDF, TXT, and DOCS files.
+    Returns files that contain the search query in their content.
+    """
+    print(f"SEARCH_FILES ENDPOINT CALLED with query: '{req.query}'")
+    
+    if not req.query or not req.query.strip():
+        raise HTTPException(status_code=400, detail="Search query cannot be empty")
+    
+    query = req.query.strip().lower()
+    token = auth_token
+    
+    if not token:
+        # For now, return a helpful message about authentication
+        # In production, you would redirect to Google OAuth flow
+        raise HTTPException(status_code=400, detail="Google Drive authentication required. Please set up Google OAuth to search your Drive files.")
+    
+    try:
+        # Get Google Drive service
+        service = get_drive_service(token)
+        if not service:
+            raise HTTPException(status_code=400, detail="Failed to authenticate with Google Drive")
+        
+        # Search for files in Google Drive (PDF, TXT, DOCS)
+        search_query = "mimeType='application/pdf' or mimeType='text/plain' or mimeType='application/vnd.google-apps.document' or mimeType='application/msword' or mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'"
+        
+        results = service.files().list(
+            q=f"({search_query}) and trashed=false",
+            fields="files(id,name,mimeType,size,modifiedTime,parents)",
+            pageSize=100
+        ).execute()
+        
+        files = results.get('files', [])
+        print(f"Found {len(files)} files to search through")
+        
+        matching_files = []
+        
+        for file in files:
+            try:
+                print(f"Searching in file: {file['name']}")
+                
+                # Download and extract text from the file
+                file_path = drive_download_file(token, file['id'], tempfile.gettempdir())
+                if not file_path:
+                    print(f"Failed to download file: {file['name']}")
+                    continue
+                
+                # Extract text based on file type
+                text_content = ""
+                file_name = file['name'].lower()
+                
+                if file['mimeType'] == 'application/pdf' or file_name.endswith('.pdf'):
+                    text_content = extract_text_from_pdf(file_path)
+                elif file['mimeType'] == 'text/plain' or file_name.endswith('.txt'):
+                    text_content = read_text_file(file_path)
+                elif file['mimeType'] == 'application/vnd.google-apps.document':
+                    # For Google Docs, we need to export as text
+                    try:
+                        export_result = service.files().export(
+                            fileId=file['id'],
+                            mimeType='text/plain'
+                        ).execute()
+                        text_content = export_result.decode('utf-8')
+                    except Exception as e:
+                        print(f"Failed to export Google Doc {file['name']}: {e}")
+                        continue
+                elif file['mimeType'] in ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
+                    # For Word documents, try to extract text (basic implementation)
+                    text_content = read_text_file(file_path)
+                
+                # Clean up the downloaded file
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+                
+                # Smart search with fuzzy matching, typo tolerance, and similar words
+                match_result = smart_search_in_text(text_content, query)
+                if match_result:
+                    print(f"Found match in file: {file['name']} (score: {match_result['score']:.2f})")
+                    
+                    matching_files.append({
+                        'id': file['id'],
+                        'name': file['name'],
+                        'mimeType': file['mimeType'],
+                        'size': file.get('size', 0),
+                        'modifiedTime': file.get('modifiedTime', ''),
+                        'context': match_result['context'],
+                        'match_position': match_result['position'],
+                        'match_score': match_result['score'],
+                        'match_type': match_result['match_type'],
+                        'matched_text': match_result['matched_text'],
+                        'drive_url': f"https://drive.google.com/file/d/{file['id']}/view"
+                    })
+                    
+            except Exception as e:
+                print(f"Error processing file {file['name']}: {e}")
+                continue
+        
+        # Sort results by match score (highest first)
+        matching_files.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+        
+        print(f"Search completed. Found {len(matching_files)} matching files")
+        
+        return {
+            'query': req.query,
+            'total_searched': len(files),
+            'matches_found': len(matching_files),
+            'files': matching_files
+        }
+        
+    except Exception as e:
+        print(f"Search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+@app.post("/visual_search")
+async def visual_search(image: UploadFile = File(...), auth_token: str | None = Query(None)):
+    """
+    Visual search: analyze uploaded image and search for related content in Google Drive files.
+    Uses local computer vision model (no API keys required).
+    """
+    print(f"VISUAL_SEARCH ENDPOINT CALLED with image: {image.filename}")
+    
+    if not auth_token:
+        raise HTTPException(status_code=400, detail="Google Drive authentication required. Please set up Google OAuth to search your Drive files.")
+    
+    try:
+        # Save uploaded image temporarily
+        temp_image_path = os.path.join(tempfile.gettempdir(), f"visual_search_{image.filename}")
+        with open(temp_image_path, "wb") as buffer:
+            content = await image.read()
+            buffer.write(content)
+        
+        # Analyze image using local computer vision model
+        detected_objects = analyze_image_content(temp_image_path)
+        
+        # Clean up temp image
+        try:
+            os.remove(temp_image_path)
+        except Exception:
+            pass
+        
+        if not detected_objects:
+            return {
+                'query': 'visual search',
+                'detected_objects': [],
+                'total_searched': 0,
+                'matches_found': 0,
+                'files': []
+            }
+        
+        # Search for files containing the detected objects
+        search_queries = detected_objects[:3]  # Use top 3 detected objects
+        all_matching_files = []
+        
+        # Get Google Drive service
+        service = get_drive_service(auth_token)
+        if not service:
+            raise HTTPException(status_code=400, detail="Failed to authenticate with Google Drive")
+        
+        # Search for files in Google Drive
+        search_query = "mimeType='application/pdf' or mimeType='text/plain' or mimeType='application/vnd.google-apps.document' or mimeType='application/msword' or mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'"
+        
+        results = service.files().list(
+            q=f"({search_query}) and trashed=false",
+            fields="files(id,name,mimeType,size,modifiedTime,parents)",
+            pageSize=50  # Limit for visual search
+        ).execute()
+        
+        files = results.get('files', [])
+        print(f"Found {len(files)} files to search through for visual content")
+        
+        # Search each file for the detected objects
+        for query in search_queries:
+            matching_files = []
+            
+            for file in files:
+                try:
+                    # Download and extract text from the file
+                    file_path = drive_download_file(auth_token, file['id'], tempfile.gettempdir())
+                    if not file_path:
+                        continue
+                    
+                    # Extract text based on file type
+                    text_content = ""
+                    file_name = file['name'].lower()
+                    
+                    if file['mimeType'] == 'application/pdf' or file_name.endswith('.pdf'):
+                        text_content = extract_text_from_pdf(file_path)
+                    elif file['mimeType'] == 'text/plain' or file_name.endswith('.txt'):
+                        text_content = read_text_file(file_path)
+                    elif file['mimeType'] == 'application/vnd.google-apps.document':
+                        try:
+                            export_result = service.files().export(
+                                fileId=file['id'],
+                                mimeType='text/plain'
+                            ).execute()
+                            text_content = export_result.decode('utf-8')
+                        except Exception as e:
+                            print(f"Failed to export Google Doc {file['name']}: {e}")
+                            continue
+                    elif file['mimeType'] in ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
+                        text_content = read_text_file(file_path)
+                    
+                    # Clean up the downloaded file
+                    try:
+                        os.remove(file_path)
+                    except Exception:
+                        pass
+                    
+                    # Search for the detected object in the text content
+                    match_result = smart_search_in_text(text_content, query)
+                    if match_result:
+                        print(f"Found visual match in file: {file['name']} for object: {query}")
+                        
+                        matching_files.append({
+                            'id': file['id'],
+                            'name': file['name'],
+                            'mimeType': file['mimeType'],
+                            'size': file.get('size', 0),
+                            'modifiedTime': file.get('modifiedTime', ''),
+                            'context': match_result['context'],
+                            'match_position': match_result['position'],
+                            'match_score': match_result['score'],
+                            'match_type': 'visual_object',
+                            'matched_text': f"Related to: {query}",
+                            'detected_object': query,
+                            'drive_url': f"https://drive.google.com/file/d/{file['id']}/view"
+                        })
+                        
+                except Exception as e:
+                    print(f"Error processing file {file['name']}: {e}")
+                    continue
+            
+            all_matching_files.extend(matching_files)
+        
+        # Remove duplicates and sort by score
+        unique_files = {}
+        for file in all_matching_files:
+            file_id = file['id']
+            if file_id not in unique_files or file['match_score'] > unique_files[file_id]['match_score']:
+                unique_files[file_id] = file
+        
+        final_files = list(unique_files.values())
+        final_files.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+        
+        print(f"Visual search completed. Found {len(final_files)} matching files for objects: {detected_objects}")
+        
+        return {
+            'query': 'visual search',
+            'detected_objects': detected_objects,
+            'total_searched': len(files),
+            'matches_found': len(final_files),
+            'files': final_files
+        }
+        
+    except Exception as e:
+        print(f"Visual search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Visual search failed: {str(e)}")
+
+def analyze_image_content(image_path):
+    """
+    Analyze image content using local computer vision model.
+    Returns list of detected objects/concepts.
+    """
+    try:
+        # Use the existing CV model for image classification
+        cv_model_result = get_cv_model()
+        if not cv_model_result:
+            print("CV model not available, using basic image analysis")
+            return ["image", "photo", "picture"]
+        
+        cv_model, _ = cv_model_result  # Unpack the tuple (model, transform)
+        
+        # Load and preprocess image
+        img = Image.open(image_path).convert("RGB")
+        
+        # Create transform for this image
+        image_transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+        
+        tensor = image_transform(img).unsqueeze(0)
+        
+        # Get prediction
+        with torch.no_grad():
+            outputs = cv_model(tensor)
+            probabilities = torch.nn.functional.softmax(outputs, dim=1)
+            
+        # Get top predictions and convert to meaningful terms
+        top_probs, top_indices = torch.topk(probabilities, 5)
+        top_indices = top_indices[0].tolist()  # Get the actual indices
+        top_probs = top_probs[0].tolist()     # Get the actual probabilities
+        
+        print(f"Top predictions: {list(zip(top_indices, top_probs))}")
+        
+        # Map ImageNet class indices to meaningful search terms
+        detected_objects = []
+        for idx in top_indices:
+            # Comprehensive mapping of ImageNet classes to meaningful search terms
+            object_mappings = {
+                # Birds and Poultry
+                7: ["cock", "rooster", "chicken", "poultry", "bird", "farm"],
+                8: ["hen", "chicken", "poultry", "bird", "farm", "egg"],
+                9: ["ostrich", "bird", "large bird", "wildlife"],
+                10: ["brambling", "bird", "small bird", "wildlife"],
+                11: ["goldfinch", "bird", "small bird", "wildlife"],
+                12: ["house finch", "bird", "small bird", "wildlife"],
+                13: ["junco", "bird", "small bird", "wildlife"],
+                14: ["indigo bunting", "bird", "small bird", "wildlife"],
+                15: ["robin", "bird", "small bird", "wildlife"],
+                16: ["bulbul", "bird", "small bird", "wildlife"],
+                17: ["jay", "bird", "small bird", "wildlife"],
+                18: ["magpie", "bird", "wildlife"],
+                19: ["chickadee", "bird", "small bird", "wildlife"],
+                20: ["water ouzel", "bird", "water bird", "wildlife"],
+                
+                # Mammals - Cats
+                281: ["tabby cat", "cat", "feline", "pet", "animal"],
+                282: ["tiger cat", "cat", "feline", "pet", "animal"],
+                283: ["Persian cat", "cat", "feline", "pet", "animal"],
+                284: ["Siamese cat", "cat", "feline", "pet", "animal"],
+                285: ["Egyptian cat", "cat", "feline", "pet", "animal"],
+                
+                # Mammals - Dogs
+                151: ["Chihuahua", "dog", "small dog", "pet", "animal"],
+                152: ["Japanese spaniel", "dog", "small dog", "pet", "animal"],
+                153: ["Maltese dog", "dog", "small dog", "pet", "animal"],
+                154: ["Pekinese", "dog", "small dog", "pet", "animal"],
+                155: ["Shih-Tzu", "dog", "small dog", "pet", "animal"],
+                156: ["Blenheim spaniel", "dog", "pet", "animal"],
+                157: ["papillon", "dog", "small dog", "pet", "animal"],
+                158: ["toy terrier", "dog", "small dog", "pet", "animal"],
+                
+                # Farm Animals
+                345: ["pig", "hog", "swine", "farm", "animal"],
+                346: ["wild boar", "pig", "wild animal", "wildlife"],
+                347: ["warthog", "pig", "wild animal", "wildlife"],
+                348: ["hippopotamus", "hippo", "large animal", "wildlife"],
+                349: ["ox", "cattle", "farm", "animal"],
+                350: ["water buffalo", "buffalo", "farm", "animal"],
+                351: ["bison", "buffalo", "wild animal", "wildlife"],
+                
+                # Food Items
+                924: ["guacamole", "food", "dip", "avocado", "mexican"],
+                925: ["consomme", "soup", "food", "broth"],
+                926: ["hot pot", "food", "cooking", "meal"],
+                927: ["trifle", "dessert", "food", "sweet"],
+                928: ["ice cream", "dessert", "food", "sweet"],
+                929: ["ice lolly", "popsicle", "dessert", "food"],
+                930: ["French loaf", "bread", "food", "bakery"],
+                931: ["bagel", "bread", "food", "breakfast"],
+                932: ["pretzel", "snack", "food", "bakery"],
+                933: ["cheeseburger", "burger", "food", "fast food"],
+                934: ["hotdog", "food", "fast food", "sausage"],
+                935: ["mashed potato", "potato", "food", "side dish"],
+                936: ["head cabbage", "cabbage", "vegetable", "food"],
+                937: ["broccoli", "vegetable", "food", "green"],
+                938: ["cauliflower", "vegetable", "food", "white"],
+                939: ["zucchini", "vegetable", "food", "green"],
+                940: ["spaghetti squash", "squash", "vegetable", "food"],
+                
+                # Vehicles
+                403: ["airliner", "airplane", "aircraft", "transportation", "travel"],
+                404: ["warplane", "airplane", "aircraft", "military"],
+                407: ["ambulance", "vehicle", "emergency", "medical"],
+                408: ["beach wagon", "car", "vehicle", "transportation"],
+                409: ["cab", "taxi", "car", "vehicle", "transportation"],
+                410: ["convertible", "car", "vehicle", "transportation"],
+                411: ["jeep", "car", "vehicle", "off-road"],
+                412: ["limousine", "car", "vehicle", "luxury"],
+                413: ["minivan", "car", "vehicle", "family"],
+                414: ["Model T", "car", "vehicle", "vintage"],
+                415: ["racer", "race car", "vehicle", "sports"],
+                416: ["sports car", "car", "vehicle", "fast"],
+                417: ["station wagon", "car", "vehicle", "family"],
+                
+                # Technology
+                664: ["cellular telephone", "phone", "mobile", "technology"],
+                665: ["dial telephone", "phone", "vintage", "technology"],
+                666: ["digital clock", "clock", "time", "technology"],
+                667: ["digital watch", "watch", "time", "technology"],
+                668: ["disk brake", "brake", "car part", "automotive"],
+                669: ["desktop computer", "computer", "technology", "work"],
+                670: ["hand-held computer", "device", "technology", "portable"],
+                671: ["laptop", "computer", "technology", "portable"],
+                672: ["notebook", "computer", "technology", "portable"],
+                
+                # Nature
+                980: ["volcano", "mountain", "nature", "geological"],
+                981: ["promontory", "cliff", "nature", "geological"],
+                982: ["sandbar", "beach", "nature", "water"],
+                983: ["coral reef", "reef", "nature", "underwater"],
+                984: ["lakeside", "lake", "nature", "water"],
+                985: ["seashore", "beach", "nature", "water"],
+                986: ["geyser", "nature", "geological", "water"]
+            }
+            
+            if idx in object_mappings:
+                objects_for_class = object_mappings[idx]
+                print(f"Class {idx} mapped to: {objects_for_class}")
+                detected_objects.extend(objects_for_class)
+            else:
+                print(f"Class {idx} not in mapping, using generic terms")
+                # Generic terms based on class index ranges
+                if 0 <= idx <= 50:  # Bird range
+                    detected_objects.extend(["bird", "animal", "wildlife"])
+                elif 151 <= idx <= 268:  # Dog range
+                    detected_objects.extend(["dog", "pet", "animal"])
+                elif 281 <= idx <= 285:  # Cat range
+                    detected_objects.extend(["cat", "pet", "animal"])
+                elif 345 <= idx <= 382:  # Farm animal range
+                    detected_objects.extend(["farm animal", "animal", "livestock"])
+                elif 400 <= idx <= 500:  # Vehicle range
+                    detected_objects.extend(["vehicle", "transportation"])
+                elif 900 <= idx <= 999:  # Food/object range
+                    detected_objects.extend(["food", "object", "item"])
+                else:
+                    detected_objects.extend(["object", "item", "thing"])
+        
+        # Remove duplicates and return top terms
+        unique_objects = list(dict.fromkeys(detected_objects))
+        print(f"Final detected objects: {unique_objects}")
+        return unique_objects[:8]  # Return top 8 unique terms
+        
+    except Exception as e:
+        print(f"Image analysis error: {e}")
+        # Fallback to basic terms
+        return ["image", "photo", "picture", "document", "content"]
 
 @app.get("/favicon.ico")
 def favicon():

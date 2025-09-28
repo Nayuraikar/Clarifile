@@ -2933,6 +2933,79 @@ class PerformanceOptimizer {
   }
 }
 
+// Professional Effects Class for enhanced UI interactions
+class ProfessionalEffects {
+  constructor() {
+    this.init();
+  }
+
+  init() {
+    this.enhanceButtons();
+    this.enhanceCards();
+    this.addHoverEffects();
+  }
+
+  enhanceButtons() {
+    const buttons = document.querySelectorAll('button, .professional-button');
+    buttons.forEach(button => {
+      if (!button.classList.contains('effects-enhanced')) {
+        button.classList.add('effects-enhanced');
+        this.addButtonEffects(button);
+      }
+    });
+  }
+
+  enhanceCards() {
+    const cards = document.querySelectorAll('.professional-card, .glass-card');
+    cards.forEach(card => {
+      if (!card.classList.contains('effects-enhanced')) {
+        card.classList.add('effects-enhanced');
+        this.addCardEffects(card);
+      }
+    });
+  }
+
+  addButtonEffects(button) {
+    button.addEventListener('mouseenter', () => {
+      button.style.transform = 'translateY(-2px) scale(1.02)';
+      button.style.boxShadow = '0 8px 24px rgba(45, 36, 22, 0.16)';
+    });
+
+    button.addEventListener('mouseleave', () => {
+      button.style.transform = '';
+      button.style.boxShadow = '';
+    });
+  }
+
+  addCardEffects(card) {
+    card.addEventListener('mouseenter', () => {
+      card.style.transform = 'translateY(-2px) scale(1.01)';
+      card.style.boxShadow = '0 8px 24px rgba(45, 36, 22, 0.16)';
+    });
+
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = '';
+      card.style.boxShadow = '';
+    });
+  }
+
+  addHoverEffects() {
+    // Add subtle hover effects to interactive elements
+    const interactiveElements = document.querySelectorAll('input, textarea, select');
+    interactiveElements.forEach(element => {
+      if (!element.classList.contains('effects-enhanced')) {
+        element.classList.add('effects-enhanced');
+        element.addEventListener('focus', () => {
+          element.style.transform = 'translateY(-1px)';
+        });
+        element.addEventListener('blur', () => {
+          element.style.transform = '';
+        });
+      }
+    });
+  }
+}
+
 // Initialize all professional effects when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   new PerformanceOptimizer();

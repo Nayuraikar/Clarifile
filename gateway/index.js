@@ -2,11 +2,13 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const fileUpload = require('express-fileupload');
 const app = express();
 const path = require('path');
 
 app.use(express.json());
 app.use(cors());
+app.use(fileUpload());
 
 // ====== SERVICE ENDPOINTS ======
 const PARSER = 'http://127.0.0.1:8000';
@@ -537,6 +539,52 @@ app.post('/drive/extract_insights', async (req, res) => {
     const r = await axios.post(`${PARSER}/drive_extract_insights`, body);
     res.json(r.data);
   } catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Search files in Drive by content
+app.post('/search_files', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const query = req.body?.query;
+    if (!query) return res.status(400).json({ error: 'missing search query' });
+    
+    const r = await axios.post(`${PARSER}/search_files?auth_token=${encodeURIComponent(DRIVE_TOKEN)}`, { query });
+    res.json(r.data);
+  } catch (e) { 
+    console.error('Search error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.detail || e.toString() }); 
+  }
+});
+
+// Visual search files in Drive by image content
+app.post('/visual_search', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    
+    // Forward the multipart form data to the parser
+    const FormData = require('form-data');
+    const formData = new FormData();
+    
+    // Add the image file
+    if (req.files && req.files.image) {
+      formData.append('image', req.files.image.data, {
+        filename: req.files.image.name,
+        contentType: req.files.image.mimetype
+      });
+    } else {
+      return res.status(400).json({ error: 'missing image file' });
+    }
+    
+    const r = await axios.post(`${PARSER}/visual_search?auth_token=${encodeURIComponent(DRIVE_TOKEN)}`, formData, {
+      headers: {
+        ...formData.getHeaders()
+      }
+    });
+    res.json(r.data);
+  } catch (e) { 
+    console.error('Visual search error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.detail || e.toString() }); 
+  }
 });
 
 // Get summary of a file

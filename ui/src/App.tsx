@@ -78,7 +78,7 @@ function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 
 }
 
 export default function App() {
-  const [tab, setTab] = useState<'dashboard'|'drive'|'dups'|'cats'|'ai'>('dashboard')
+  const [tab, setTab] = useState<'dashboard'|'drive'|'dups'|'cats'|'ai'|'search'>('dashboard')
   const [isScanning, setIsScanning] = useState(false)
   const [scanProgress, setScanProgress] = useState(0)
   const [scanStatus, setScanStatus] = useState('')
@@ -102,6 +102,12 @@ export default function App() {
   const [duplicateResolution, setDuplicateResolution] = useState<{ [key: string]: boolean }>({})
   const [duplicateResolutionLoading, setDuplicateResolutionLoading] = useState(false)
   const [viewAllProposals, setViewAllProposals] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchStats, setSearchStats] = useState<{total_searched: number, matches_found: number} | null>(null)
+  const [visualSearchImage, setVisualSearchImage] = useState<File | null>(null)
+  const [visualSearchPreview, setVisualSearchPreview] = useState<string | null>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
   // Helper function to set loading state for specific operations
@@ -434,6 +440,198 @@ export default function App() {
     setQuickActionLoading(true)
   }
 
+  // Search functionality
+  async function performSearch() {
+    if (!searchQuery.trim()) {
+      setNotification('Please enter a search query')
+      return
+    }
+
+    setSearchLoading(true)
+    setSearchResults([])
+    setSearchStats(null)
+    setNotification('Searching through your Google Drive files...')
+
+    try {
+      // Call the actual backend search endpoint
+      const response = await call('/search_files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: searchQuery
+        })
+      })
+
+      if (response?.error) {
+        if (response.error.includes('no drive token available')) {
+          setNotification('Please click "Organize in Drive" first to authenticate with Google Drive, then try searching.')
+        } else {
+          setNotification(`Search failed: ${response.error}`)
+        }
+        return
+      }
+
+      setSearchResults(response.files || [])
+      setSearchStats({
+        total_searched: response.total_searched || 0,
+        matches_found: response.matches_found || 0
+      })
+      
+      setNotification(`Found ${response.matches_found || 0} files matching "${searchQuery}" in your Google Drive`)
+    } catch (error: any) {
+      console.error('Search error:', error)
+      setNotification(`Search failed: ${error?.message || 'Unknown error'}`)
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  // Visual search function
+  async function performVisualSearch() {
+    if (!visualSearchImage) {
+      setNotification('Please select an image first')
+      return
+    }
+
+    setSearchLoading(true)
+    setSearchResults([])
+    setSearchStats(null)
+    setNotification('Analyzing image and searching through your files...')
+
+    try {
+      // Create FormData to send the image
+      const formData = new FormData()
+      formData.append('image', visualSearchImage)
+
+      const response = await fetch('http://127.0.0.1:4000/visual_search', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+
+      if (result?.error) {
+        setNotification(`Visual search failed: ${result.error}`)
+        return
+      }
+
+      setSearchResults(result.files || [])
+      setSearchStats({
+        total_searched: result.total_searched || 0,
+        matches_found: result.matches_found || 0
+      })
+      
+      setNotification(`Found ${result.matches_found || 0} files related to "${result.detected_objects?.join(', ')}" in your Google Drive`)
+    } catch (error: any) {
+      console.error('Visual search error:', error)
+      setNotification(`Visual search failed: ${error?.message || 'Unknown error'}`)
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  // Handle image upload
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      if (file.type.startsWith('image/')) {
+        setVisualSearchImage(file)
+        
+        // Create preview URL
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          setVisualSearchPreview(e.target?.result as string)
+        }
+        reader.readAsDataURL(file)
+        
+        setNotification('Image uploaded! Click the camera button to search.')
+      } else {
+        setNotification('Please select a valid image file')
+      }
+    }
+  }
+
+  // Clear visual search
+  const clearVisualSearch = () => {
+    setVisualSearchImage(null)
+    setVisualSearchPreview(null)
+    if (inputRef.current) {
+      inputRef.current.value = ''
+    }
+  }
+
+  // Demo function to generate sample search results
+  function generateDemoSearchResults(query: string) {
+    const queryLower = query.toLowerCase()
+    
+    // Sample files that could match different queries
+    const sampleFiles = [
+      {
+        id: 'demo-1',
+        name: 'Project Documentation.pdf',
+        mimeType: 'application/pdf',
+        size: 245760,
+        modifiedTime: '2024-01-15T10:30:00Z',
+        context: 'This document contains comprehensive project documentation including requirements, architecture, and implementation details for the new system.',
+        match_position: 45,
+        drive_url: 'https://drive.google.com/file/d/demo-1/view'
+      },
+      {
+        id: 'demo-2',
+        name: 'Meeting Notes - Q1 Planning.txt',
+        mimeType: 'text/plain',
+        size: 12800,
+        modifiedTime: '2024-01-10T14:20:00Z',
+        context: 'Meeting notes from the quarterly planning session. Discussed project timelines, resource allocation, and key deliverables for the upcoming quarter.',
+        match_position: 12,
+        drive_url: 'https://drive.google.com/file/d/demo-2/view'
+      },
+      {
+        id: 'demo-3',
+        name: 'Grocery Shopping List.txt',
+        mimeType: 'text/plain',
+        size: 1024,
+        modifiedTime: '2024-01-20T09:15:00Z',
+        context: 'Weekly grocery list including fruits, vegetables, dairy products, and household items. Remember to buy organic vegetables and check expiration dates.',
+        match_position: 8,
+        drive_url: 'https://drive.google.com/file/d/demo-3/view'
+      },
+      {
+        id: 'demo-4',
+        name: 'Invoice - January 2024.pdf',
+        mimeType: 'application/pdf',
+        size: 89600,
+        modifiedTime: '2024-01-25T16:45:00Z',
+        context: 'Monthly invoice for services rendered in January 2024. Total amount due: $2,450.00. Payment terms: Net 30 days.',
+        match_position: 23,
+        drive_url: 'https://drive.google.com/file/d/demo-4/view'
+      },
+      {
+        id: 'demo-5',
+        name: 'Research Paper - AI Applications.pdf',
+        mimeType: 'application/pdf',
+        size: 512000,
+        modifiedTime: '2024-01-12T11:30:00Z',
+        context: 'Academic research paper exploring artificial intelligence applications in modern software development and project management systems.',
+        match_position: 67,
+        drive_url: 'https://drive.google.com/file/d/demo-5/view'
+      }
+    ]
+    
+    // Filter files based on query
+    const matchingFiles = sampleFiles.filter(file => 
+      file.name.toLowerCase().includes(queryLower) || 
+      file.context.toLowerCase().includes(queryLower)
+    )
+    
+    return {
+      query: query,
+      total_searched: sampleFiles.length,
+      matches_found: matchingFiles.length,
+      files: matchingFiles
+    }
+  }
+
   const performQuickAction = (action: string, file: DriveProposal) => {
     console.log('Performing quick action:', action)
     console.log('File:', file.name, file.id)
@@ -644,6 +842,7 @@ export default function App() {
               {[
                 ['dashboard','Dashboard'],
                 ['drive','Files'],
+                ['search','Find Files'],
                 ['cats','Categories'],
                 ['dups','Duplicates'],
                 ['ai','AI Assistant']
@@ -1329,6 +1528,355 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+              </div>
+            </Section>
+          )}
+
+          {tab==='search' && (
+            <Section>
+              <div className="search-engine-container fade-in">
+                {/* Modern Search Engine Header */}
+                <div className="search-engine-header">
+                  <h1 className="search-engine-logo">Clarifile Search</h1>
+                  <p className="search-engine-tagline">Intelligent File Discovery</p>
+                  <p className="search-engine-subtitle">Find any document instantly with AI-powered content search</p>
+                </div>
+                
+                {/* Modern Search Input */}
+                <div className="search-input-container">
+                  <div className="search-box-modern">
+                    <div className="search-input-wrapper">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b7355" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                      </svg>
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && !searchLoading && performSearch()}
+                        placeholder="Search documents, PDFs, presentations, and more..."
+                        className="search-input-modern"
+                        disabled={searchLoading}
+                      />
+                      
+                      {/* Visual Search & Action Buttons */}
+                      <div className="search-actions">
+                        <input
+                          ref={inputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          style={{ display: 'none' }}
+                          id="visual-search-input"
+                        />
+                        <label 
+                          htmlFor="visual-search-input" 
+                          className="search-action-btn visual-search-btn"
+                          title="Upload image for visual search"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 15.5L8.5 12L10.5 10L12 11.5L13.5 10L15.5 12L12 15.5ZM9 2L7.17 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4H16.83L15 2H9ZM12 17C15.31 17 18 14.31 18 11S15.31 5 12 5S6 7.69 6 11S8.69 17 12 17Z"/>
+                          </svg>
+                        </label>
+                        
+                        {visualSearchImage && (
+                          <button 
+                            onClick={performVisualSearch}
+                            disabled={searchLoading}
+                            className="search-action-btn visual-search-active"
+                            title="Search using uploaded image"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 15.5L8.5 12L10.5 10L12 11.5L13.5 10L15.5 12L12 15.5ZM9 2L7.17 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4H16.83L15 2H9ZM12 17C15.31 17 18 14.31 18 11S15.31 5 12 5S6 7.69 6 11S8.69 17 12 17Z"/>
+                            </svg>
+                          </button>
+                        )}
+                        
+                        <button 
+                          onClick={performSearch} 
+                          disabled={searchLoading || !searchQuery.trim()} 
+                          className="search-submit-btn-modern"
+                        >
+                          {searchLoading ? (
+                            <>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="animate-spin">
+                                <path d="M12 2V6M12 18V22M4.93 4.93L7.76 7.76M16.24 16.24L19.07 19.07M2 12H6M18 12H22M4.93 19.07L7.76 16.24M16.24 7.76L19.07 4.93"/>
+                              </svg>
+                              <span>Searching...</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M15.5 14H14.71L14.43 13.73C15.41 12.59 16 11.11 16 9.5C16 5.91 13.09 3 9.5 3S3 5.91 3 9.5S5.91 16 9.5 16C11.11 16 12.59 15.41 13.73 14.43L14 14.71V15.5L19 20.49L20.49 19L15.5 14ZM9.5 14C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5S14 7.01 14 9.5S11.99 14 9.5 14Z\"/>
+                              </svg>
+                              <span>Search</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Image Preview */}
+                  {visualSearchPreview && (
+                    <div className="visual-search-preview">
+                      <div className="visual-search-preview-header">
+                        <span>📷 Visual Search Image:</span>
+                        <button onClick={clearVisualSearch} className="clear-image-btn">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"/>
+                          </svg>
+                        </button>
+                      </div>
+                      <img src={visualSearchPreview} alt="Visual search" className="visual-search-preview-image" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Modern Search Stats */}
+                {searchStats && (
+                  <div className="search-stats-modern">
+                    <div className="search-stats-container">
+                      <div className="search-stat-item">
+                        <div className="search-stat-icon">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 3v5h5M3 21l6-6m4-3a9 9 0 1 1-12-8.4"/>
+                          </svg>
+                        </div>
+                        <div className="search-stat-content">
+                          <div className="search-stat-number">{searchStats.total_searched.toLocaleString()}</div>
+                          <div className="search-stat-label">Files Searched</div>
+                        </div>
+                      </div>
+                      <div className="search-stats-separator"></div>
+                      <div className="search-stat-item">
+                        <div className="search-stat-icon">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="m9 12 2 2 4-4"/>
+                          </svg>
+                        </div>
+                        <div className="search-stat-content">
+                          <div className="search-stat-number">{searchStats.matches_found.toLocaleString()}</div>
+                          <div className="search-stat-label">Matches Found</div>
+                        </div>
+                      </div>
+                      <div className="search-stats-separator"></div>
+                      <div className="search-stat-item">
+                        <div className="search-stat-icon">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                          </svg>
+                        </div>
+                        <div className="search-stat-content">
+                          <div className="search-stat-number">{((searchStats.matches_found / searchStats.total_searched) * 100).toFixed(1)}%</div>
+                          <div className="search-stat-label">Match Rate</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Modern Search Results */}
+                {searchResults.length > 0 ? (
+                  <div className="search-results-modern">
+                    <div className="search-results-header-modern">
+                      <div className="search-results-info">
+                        <h3 className="search-results-title-modern">Search Results</h3>
+                        <p className="search-results-subtitle">Found {searchResults.length} matching files</p>
+                      </div>
+                      <div className="search-results-badge">
+                        {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'}
+                      </div>
+                    </div>
+                    <div className="search-results-grid-modern">
+                      {searchResults.map((file, index) => (
+                        <div key={file.id} className="search-result-card-modern fade-in" style={{animationDelay: `${index * 0.1}s`}}>
+                          <div className="search-result-header-modern">
+                            <div className="search-result-icon">
+                              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                {(file.mimeType === 'application/pdf') && (
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"/>
+                                )}
+                                {(file.mimeType === 'text/plain') && (
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"/>
+                                )}
+                                {(file.mimeType === 'application/vnd.google-apps.document' || file.mimeType === 'application/msword' || file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') && (
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"/>
+                                )}
+                                {!['application/pdf', 'text/plain', 'application/vnd.google-apps.document', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.mimeType) && (
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"/>
+                                )}
+                              </svg>
+                            </div>
+                            <div className="search-result-info-modern">
+                              <div className="search-result-name-modern">{file.name}</div>
+                              <div className="search-result-meta">
+                                <span className="search-result-type-modern">
+                                  {file.mimeType === 'application/pdf' && 'PDF Document'}
+                                  {file.mimeType === 'text/plain' && 'Text File'}
+                                  {file.mimeType === 'application/vnd.google-apps.document' && 'Google Doc'}
+                                  {file.mimeType === 'application/msword' && 'Word Document'}
+                                  {file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && 'Word Document'}
+                                  {!['application/pdf', 'text/plain', 'application/vnd.google-apps.document', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.mimeType) && 'Document'}
+                                </span>
+                                <span className="search-result-divider">•</span>
+                                <span className="search-result-size-modern">
+                                  {file.size ? `${Math.round(file.size / 1024)} KB` : 'Unknown size'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {file.match_type && (
+                            <div className="search-match-badges">
+                              <span className={`match-badge match-${file.match_type}`}>
+                                {file.match_type === 'exact' && 'Exact Match'}
+                                {file.match_type === 'fuzzy' && 'Fuzzy Match'}
+                                {file.match_type === 'partial' && 'Partial Match'}
+                                {file.match_type === 'synonym' && 'Synonym Match'}
+                                {file.match_type === 'proximity' && 'Proximity Match'}
+                                {file.match_type === 'word_boundary' && 'Word Match'}
+                                {file.match_type === 'visual_object' && 'Visual Match'}
+                              </span>
+                              {file.match_score && (
+                                <span className="match-score-badge">
+                                  {Math.round(file.match_score * 100)}% confidence
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {file.context && (
+                            <div className="search-result-preview">
+                              <div className="search-preview-label">Content Preview</div>
+                              <div className="search-preview-text">
+                                ...{file.context}...
+                              </div>
+                              {file.matched_text && file.matched_text !== file.context && (
+                                <div className="search-matched-text">
+                                  <span className="match-label">Found:</span> 
+                                  <span className="match-highlight">"{file.matched_text}"</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          
+                          <div className="search-result-actions-modern">
+                            <a 
+                              href={file.drive_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="search-action-btn-modern primary"
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 19H5V5H12V3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V12H19V19ZM14 3V5H17.59L7.76 14.83L9.17 16.24L19 6.41V10H21V3H14Z"/>
+                              </svg>
+                              Open in Drive
+                            </a>
+                            <button 
+                              className="search-action-btn-modern secondary"
+                              onClick={() => {
+                                // Create a mock DriveProposal for the file
+                                const mockFile: DriveProposal = {
+                                  id: file.id,
+                                  name: file.name,
+                                  proposed_category: 'Search Result'
+                                }
+                                ensureChatForFile(mockFile)
+                                setTab('ai')
+                                setNotification(`Opened chat for "${file.name}"`)
+                              }}
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2ZM20 16H5.17L4 17.17V4H20V16Z"/>
+                                <path d="M7 9H17V11H7V9ZM7 12H15V14H7V12Z"/>
+                              </svg>
+                              Chat About File
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : searchQuery && !searchLoading && searchStats && (
+                  <div className="search-empty-state">
+                    <div className="search-empty-icon">
+                      <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M15.5 14H14.71L14.43 13.73C15.41 12.59 16 11.11 16 9.5C16 5.91 13.09 3 9.5 3S3 5.91 3 9.5S5.91 16 9.5 16C11.11 16 12.59 15.41 13.73 14.43L14 14.71V15.5L19 20.49L20.49 19L15.5 14ZM9.5 14C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5S14 7.01 14 9.5S11.99 14 9.5 14Z"/>
+                      </svg>
+                    </div>
+                    <h3 className="search-empty-title">No Files Found</h3>
+                    <p className="search-empty-description">
+                      No files contain "{searchQuery}". Try different keywords or check your spelling.
+                    </p>
+                  </div>
+                )}
+
+                {!searchQuery && !searchLoading && (
+                  <div className="search-welcome-modern">
+                    <div className="search-welcome-content">
+                      <div className="search-welcome-icon-modern">
+                        <div className="search-icon-container">
+                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                          </svg>
+                        </div>
+                      </div>
+                      <h3 className="search-welcome-title-modern">Discover Your Files</h3>
+                      <p className="search-welcome-description-modern">
+                        Search through your documents with intelligent AI-powered matching
+                      </p>
+
+                      <div className="search-examples-modern">
+                        <div className="search-examples-header">
+                          <span className="search-examples-icon">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <circle cx="12" cy="12" r="10"/>
+                              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                              <path d="M12 17h.01"/>
+                            </svg>
+                          </span>
+                          <span className="search-examples-title-modern">Try these example searches:</span>
+                        </div>
+                        <div className="search-examples-grid">
+                          <button 
+                            className="search-example-modern"
+                            onClick={() => setSearchQuery('project documentation')}
+                          >
+                            <span className="example-text">project documentation</span>
+                          </button>
+                          <button 
+                            className="search-example-modern"
+                            onClick={() => setSearchQuery('meetng notes')}
+                            title="Will find 'meeting notes' even with typo"
+                          >
+                            <span className="example-text">meetng notes</span>
+                            <span className="example-badge">typo fix</span>
+                          </button>
+                          <button 
+                            className="search-example-modern"
+                            onClick={() => setSearchQuery('bill')}
+                            title="Will find 'invoice', 'receipt', 'payment'"
+                          >
+                            <span className="example-text">bill</span>
+                            <span className="example-badge">synonyms</span>
+                          </button>
+                          <button 
+                            className="search-example-modern"
+                            onClick={() => setSearchQuery('task work')}
+                            title="Finds documents with both words nearby"
+                          >
+                            <span className="example-text">task work</span>
+                            <span className="example-badge">proximity</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </Section>
           )}
