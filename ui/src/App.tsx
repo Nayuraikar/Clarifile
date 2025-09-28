@@ -1532,165 +1532,183 @@ export default function App() {
             </Section>
           )}
 
-          {tab==='search' && (
+          {tab === 'search' && (
             <Section>
-              <div className="search-engine-container fade-in">
-                {/* Modern Search Engine Header */}
-                <div className="search-engine-header">
-                  <h1 className="search-engine-logo">Clarifile Search</h1>
-                  <p className="search-engine-tagline">Intelligent File Discovery</p>
-                  <p className="search-engine-subtitle">Find any document instantly with AI-powered content search</p>
+              <div className="max-w-4xl mx-auto px-4 py-8">
+                {/* Search Header */}
+                <div className="text-center mb-8">
+                  <h1 className="text-3xl font-bold text-[#2d2416] mb-2">Find Your Files</h1>
+                  <p className="text-[#5d4e37] max-w-2xl mx-auto">Search across your documents, PDFs, and presentations with AI-powered precision</p>
                 </div>
                 
-                {/* Modern Search Input */}
-                <div className="search-input-container">
-                  <div className="search-box-modern">
-                    <div className="search-input-wrapper">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b7355" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <path d="m21 21-4.35-4.35"></path>
-                      </svg>
+                {/* Search Box */}
+                <div className="bg-white rounded-xl shadow-md p-1.5 mb-8 border border-[#e6dfd4] transition-all duration-300 hover:shadow-lg">
+                  <div className="flex items-center">
+                    <div className="flex-1 relative">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b7355" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <path d="m21 21-4.35-4.35"></path>
+                        </svg>
+                      </div>
                       <input
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && !searchLoading && performSearch()}
                         placeholder="Search documents, PDFs, presentations, and more..."
-                        className="search-input-modern"
+                        className="w-full pl-12 pr-4 py-3 text-[#2d2416] bg-transparent border-none focus:ring-0 focus:outline-none placeholder-[#8b7355]"
                         disabled={searchLoading}
                       />
-                      
-                      {/* Visual Search & Action Buttons */}
-                      <div className="search-actions">
-                        <input
-                          ref={inputRef}
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageUpload}
-                          style={{ display: 'none' }}
-                          id="visual-search-input"
-                        />
+                    </div>
+                    
+                    {/* Visual Search Button */}
+                    <div className="flex-shrink-0 ml-2">
+                      <input
+                        ref={inputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        style={{ display: 'none' }}
+                        id="visual-search-input"
+                      />
+                      {!visualSearchImage ? (
                         <label 
                           htmlFor="visual-search-input" 
-                          className="search-action-btn visual-search-btn"
+                          className="inline-flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-[#8b7355] bg-white border border-[#e6dfd4] rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer whitespace-nowrap"
                           title="Upload image for visual search"
                         >
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-[#8b7355]">
                             <path d="M12 15.5L8.5 12L10.5 10L12 11.5L13.5 10L15.5 12L12 15.5ZM9 2L7.17 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4H16.83L15 2H9ZM12 17C15.31 17 18 14.31 18 11S15.31 5 12 5S6 7.69 6 11S8.69 17 12 17Z"/>
                           </svg>
+                          <span>Visual search</span>
                         </label>
-                        
-                        {visualSearchImage && (
+                      ) : (
+                        <div className="flex items-center gap-3 bg-[#f9f6f0] px-4 py-2 rounded-lg border border-[#e6dfd4]">
+                          <div className="flex items-center gap-2 text-sm text-[#5d4e37]">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-green-500">
+                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                            </svg>
+                            <span>Image ready</span>
+                          </div>
                           <button 
-                            onClick={performVisualSearch}
-                            disabled={searchLoading}
-                            className="search-action-btn visual-search-active"
-                            title="Search using uploaded image"
+                            onClick={() => setVisualSearchImage(null)}
+                            className="p-1 text-gray-500 hover:text-gray-700 transition-colors"
+                            title="Remove image"
                           >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M12 15.5L8.5 12L10.5 10L12 11.5L13.5 10L15.5 12L12 15.5ZM9 2L7.17 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4H16.83L15 2H9ZM12 17C15.31 17 18 14.31 18 11S15.31 5 12 5S6 7.69 6 11S8.69 17 12 17Z"/>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M18 6L6 18M6 6l12 12"/>
                             </svg>
                           </button>
-                        )}
-                        
-                        <button 
-                          onClick={performSearch} 
-                          disabled={searchLoading || !searchQuery.trim()} 
-                          className="search-submit-btn-modern"
-                        >
-                          {searchLoading ? (
-                            <>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="animate-spin">
-                                <path d="M12 2V6M12 18V22M4.93 4.93L7.76 7.76M16.24 16.24L19.07 19.07M2 12H6M18 12H22M4.93 19.07L7.76 16.24M16.24 7.76L19.07 4.93"/>
-                              </svg>
-                              <span>Searching...</span>
-                            </>
-                          ) : (
-                            <>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M15.5 14H14.71L14.43 13.73C15.41 12.59 16 11.11 16 9.5C16 5.91 13.09 3 9.5 3S3 5.91 3 9.5S5.91 16 9.5 16C11.11 16 12.59 15.41 13.73 14.43L14 14.71V15.5L19 20.49L20.49 19L15.5 14ZM9.5 14C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5S14 7.01 14 9.5S11.99 14 9.5 14Z\"/>
-                              </svg>
-                              <span>Search</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
+                    
+                    {/* Search Button */}
+                    <button 
+                      onClick={visualSearchImage ? performVisualSearch : performSearch}
+                      disabled={searchLoading || (!searchQuery.trim() && !visualSearchImage)}
+                      className="ml-2 px-6 py-3 bg-[#5d4e37] text-[#2d2416] text-sm font-medium rounded-lg hover:bg-[#4a3f2d] transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {searchLoading ? (
+                        <>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="animate-spin">
+                            <path d="M12 2V6M12 18V22M4.93 4.93L7.76 7.76M16.24 16.24L19.07 19.07M2 12H6M18 12H22M4.93 19.07L7.76 16.24M16.24 7.76L19.07 4.93"/>
+                          </svg>
+                          <span>Searching...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="search-icon interactive-icon">
+                            <path d="M15.5 14H14.71L14.43 13.73C15.41 12.59 16 11.11 16 9.5C16 5.91 13.09 3 9.5 3S3 5.91 3 9.5S5.91 16 9.5 16C11.11 16 12.59 15.41 13.73 14.43L14 14.71V15.5L19 20.49L20.49 19L15.5 14ZM9.5 14C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5S14 7.01 14 9.5S11.99 14 9.5 14Z"></path>
+                          </svg>
+                          <span>Search</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                   
                   {/* Image Preview */}
                   {visualSearchPreview && (
-                    <div className="visual-search-preview">
-                      <div className="visual-search-preview-header">
-                        <span>📷 Visual Search Image:</span>
-                        <button onClick={clearVisualSearch} className="clear-image-btn">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <div className="mt-3 ml-12">
+                      <div className="inline-flex items-center text-sm text-[#5d4e37] bg-[#f9f6f0] px-3 py-1.5 rounded-lg">
+                        <span>Image selected</span>
+                        <button 
+                          onClick={clearVisualSearch}
+                          className="ml-2 p-0.5 hover:bg-white/50 rounded-full transition-colors"
+                          title="Remove image"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-[#8b7355]">
                             <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"/>
                           </svg>
                         </button>
                       </div>
-                      <img src={visualSearchPreview} alt="Visual search" className="visual-search-preview-image" />
                     </div>
                   )}
                 </div>
 
-                {/* Modern Search Stats */}
+                {/* Search Stats */}
                 {searchStats && (
-                  <div className="search-stats-modern">
-                    <div className="search-stats-container">
-                      <div className="search-stat-item">
-                        <div className="search-stat-icon">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                    <div className="bg-white p-4 rounded-xl border border-[#e6dfd4] shadow-sm">
+                      <div className="flex items-center">
+                        <div className="p-2 bg-[#f5f2ec] rounded-lg mr-3">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b7355" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M3 3v5h5M3 21l6-6m4-3a9 9 0 1 1-12-8.4"/>
                           </svg>
                         </div>
-                        <div className="search-stat-content">
-                          <div className="search-stat-number">{searchStats.total_searched.toLocaleString()}</div>
-                          <div className="search-stat-label">Files Searched</div>
+                        <div>
+                          <div className="text-2xl font-bold text-[#2d2416]">{searchStats.total_searched.toLocaleString()}</div>
+                          <div className="text-sm text-[#5d4e37]">Files Searched</div>
                         </div>
                       </div>
-                      <div className="search-stats-separator"></div>
-                      <div className="search-stat-item">
-                        <div className="search-stat-icon">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    </div>
+                    
+                    <div className="bg-white p-4 rounded-xl border border-[#e6dfd4] shadow-sm">
+                      <div className="flex items-center">
+                        <div className="p-2 bg-[#f0f7ed] rounded-lg mr-3">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5a8f3d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="12" cy="12" r="10"/>
                             <path d="m9 12 2 2 4-4"/>
                           </svg>
                         </div>
-                        <div className="search-stat-content">
-                          <div className="search-stat-number">{searchStats.matches_found.toLocaleString()}</div>
-                          <div className="search-stat-label">Matches Found</div>
+                        <div>
+                          <div className="text-2xl font-bold text-[#2d2416]">{searchStats.matches_found.toLocaleString()}</div>
+                          <div className="text-sm text-[#5d4e37]">Matches Found</div>
                         </div>
                       </div>
-                      <div className="search-stats-separator"></div>
-                      <div className="search-stat-item">
-                        <div className="search-stat-icon">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    </div>
+                    
+                    <div className="bg-white p-4 rounded-xl border border-[#e6dfd4] shadow-sm">
+                      <div className="flex items-center">
+                        <div className="p-2 bg-[#f5f0e6] rounded-lg mr-3">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c19a6b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
                           </svg>
                         </div>
-                        <div className="search-stat-content">
-                          <div className="search-stat-number">{((searchStats.matches_found / searchStats.total_searched) * 100).toFixed(1)}%</div>
-                          <div className="search-stat-label">Match Rate</div>
+                        <div>
+                          <div className="text-2xl font-bold text-[#2d2416]">
+                            {((searchStats.matches_found / searchStats.total_searched) * 100).toFixed(1)}%
+                          </div>
+                          <div className="text-sm text-[#5d4e37]">Match Rate</div>
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Modern Search Results */}
+              {/* Search Results */}
+              <div className="space-y-4">
                 {searchResults.length > 0 ? (
-                  <div className="search-results-modern">
-                    <div className="search-results-header-modern">
-                      <div className="search-results-info">
-                        <h3 className="search-results-title-modern">Search Results</h3>
-                        <p className="search-results-subtitle">Found {searchResults.length} matching files</p>
-                      </div>
-                      <div className="search-results-badge">
-                        {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-medium text-[#2d2416]">Search Results</h2>
+                      <div className="text-sm text-[#8b7355]">
+                        Showing {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'}
                       </div>
                     </div>
-                    <div className="search-results-grid-modern">
+
+                    <div className="space-y-3">
                       {searchResults.map((file, index) => (
                         <div key={file.id} className="search-result-card-modern fade-in" style={{animationDelay: `${index * 0.1}s`}}>
                           <div className="search-result-header-modern">
@@ -1878,10 +1896,11 @@ export default function App() {
                   </div>
                 )}
               </div>
-            </Section>
-          )}
-        </div>
+            </div>
+          </Section>
+        )}
       </div>
+    </div>
       
       {showDocumentSelector ? (
         <div className="quick-action-backdrop">
