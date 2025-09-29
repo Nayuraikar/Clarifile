@@ -6,20 +6,10 @@ function showStatus(message, type = 'info') {
   const statusDiv = document.createElement('div');
   statusDiv.className = `status ${type}`;
 
-  let icon = '';
   let loadingSpinner = '';
 
-  if (type === 'success') {
-    icon = '[OK]';
-  } else if (type === 'error') {
-    icon = '[ERROR]';
-  } else if (type === 'info') {
-    icon = '[INFO]';
-    loadingSpinner = '<span class="loading-dots"><span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span></span>';
-  }
 
   statusDiv.innerHTML = `
-    <span>${icon}</span>
     <span>${message}</span>
     ${loadingSpinner}
   `;

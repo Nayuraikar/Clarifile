@@ -21,9 +21,9 @@ let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = '1085724686418-fgvn7on50g4dmq2la1q84dflt66at0mo.apps.googleusercontent.com'; 
-const CLIENT_SECRET = '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';                         
-const REDIRECT_URI = 'https://aanmbhbgdehmchcjbiblopfkdcpejpkh.chromiumapp.org/';    
+const CLIENT_ID = '455192139473-6s9u7fqkght1on8pf0rqbd447a1vs63h.apps.googleusercontent.com'; 
+const CLIENT_SECRET = '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';                         
+const REDIRECT_URI = 'https://ohikgmkhnnlblfljijlhdpnfdhlpbbni.chromiumapp.org/';   
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
@@ -492,9 +492,29 @@ app.post('/drive/approve', async (req, res) => {
     const r = await axios.post(`${PARSER}/organize_drive_files`, payload);
     const moved = r.data?.organized_files?.[0] || {};
     const reallyMoved = !!r.data?.move_performed;
-    if (reallyMoved) {
-      DRIVE_PROPOSALS = DRIVE_PROPOSALS.filter(p => p.id !== file.id);
-      res.json({ ok: true, moved });
+    
+    if (reallyMoved || r.data?.already_in_correct_folder) {
+      // Update the file in DRIVE_PROPOSALS to mark it as approved
+      const updatedFile = { 
+        ...file, 
+        approved: true, 
+        final_category: override_category || file.proposed_category || file.final_category 
+      };
+      
+      // Update or add the file to DRIVE_PROPOSALS
+      const existingIndex = DRIVE_PROPOSALS.findIndex(p => p.id === file.id);
+      if (existingIndex >= 0) {
+        DRIVE_PROPOSALS[existingIndex] = { ...DRIVE_PROPOSALS[existingIndex], ...updatedFile };
+      } else {
+        DRIVE_PROPOSALS.push(updatedFile);
+      }
+      
+      res.json({ 
+        ok: true, 
+        moved, 
+        file: updatedFile,
+        already_in_correct_folder: r.data?.already_in_correct_folder
+      });
     } else {
       res.status(500).json({ error: 'move failed', moved });
     }

@@ -28,7 +28,7 @@
             
             init() {
                 const particleCount = 50;
-                const symbols = ['[DOC]', '[DIR]', '[LIST]', '[FILE]', '[CHART]', '[UP]', '[DOWN]', '[CARD]', '[PAGE]', '[FOLDER]', '[BOX]', '[ARCH]', '[CABINET]', '[TRASH]', '[CLIP]', '[PIN]', '[EDIT]'];
+                const symbols = ['📂'];
                 
                 for (let i = 0; i < particleCount; i++) {
                     const particle = document.createElement('div');
@@ -127,14 +127,14 @@
             }
             
             addInteractiveListeners() {
-                // Add click effects to interactive elements
+                // click effects to interactive elements
                 document.addEventListener('click', (e) => {
                     if (e.target.closest('.professional-interactive')) {
                         this.createRipple(e.clientX, e.clientY);
                     }
                 });
                 
-                // Add parallax effect to shapes
+                // parallax effect to shapes
                 document.addEventListener('mousemove', (e) => {
                     const shapes = document.querySelectorAll('.professional-shape');
                     const mouseX = e.clientX / window.innerWidth;
@@ -217,14 +217,14 @@
             }
         }
         
-        // Initialize all professional interactive systems
+        // Initializing professional interactive systems
         document.addEventListener('DOMContentLoaded', () => {
             new ProfessionalParticleSystem();
             new ProfessionalMouseTrail();
             new ProfessionalInteractions();
         });
         
-        // Add smooth scrolling for navigation
+        // smooth scrolling for navigation
         document.addEventListener('click', (e) => {
             if (e.target.closest('a[href^="#"]')) {
                 e.preventDefault();
@@ -235,7 +235,7 @@
             }
         });
         
-        // Add loading animation for page transitions
+        // loading animation for page transitions
         window.addEventListener('load', () => {
             document.body.style.opacity = '0';
             document.body.style.transition = 'opacity 0.5s ease';

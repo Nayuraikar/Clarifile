@@ -83,3 +83,4 @@ __pypackages__/
 
 # FastAPI auto-generated OpenAPI docs
 openapi.json
+gemini_keys.txt

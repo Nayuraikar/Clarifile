@@ -12,7 +12,7 @@ async function call(path: string, opts?: RequestInit) {
 
 // Helper to extract the proposed category from a proposal regardless of field name variations
 function getProposalCategory(p: any): string {
-  const getCategory = () => {
+  const getCategory = (): string => {
     // First check if we have a direct proposed_label (from backend)
     if (p?.proposed_label && typeof p.proposed_label === 'string' && p.proposed_label.trim().length > 0) {
       return p.proposed_label.trim();
@@ -47,12 +47,20 @@ function getProposalCategory(p: any): string {
       return main; // Return just "Shopping" instead of "Shopping: Shopping"
     }
   }
-  
   return category;
 }
 
-type Proposal = { id: number; file: string; proposed: string; final?: string }
-type DriveProposal = { id: string; name: string; proposed_category: string }
+type Proposal = { id: number; file: string; proposed: string; final?: string };
+
+interface DriveProposal {
+  id: string;
+  name: string;
+  proposed_category: string;
+  approved?: boolean;
+  final_category?: string;
+  mimeType?: string;
+  parents?: string[];
+}
 
 function Section({ children }: { children: React.ReactNode }) {
   return <div className="max-w-7xl mx-auto px-6 py-12">{children}</div>
@@ -1025,7 +1033,7 @@ export default function App() {
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                                 </svg>
-                                Approved
+                                {file.approved ? 'Approved' : 'Approve'}d
                               </span>
                             ) : (
                               <span className="flex items-center gap-2">
@@ -1098,28 +1106,121 @@ export default function App() {
           {tab==='drive' && (
             <Section>
               <div className="fade-in">
-                <div className="drive-section-header">
-                  <h2 className="drive-section-title">Drive Files</h2>
-                  <div className="button-group">
-                    <Button tone='secondary' onClick={refreshDrive} disabled={isLoading('refreshDrive')} loading={isLoading('refreshDrive')} className="professional-button">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
-                      </svg>
-                      Refresh Files
-                    </Button>
-                    <Button tone='primary' onClick={handleScan} disabled={isScanning} loading={isScanning} className="professional-button">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z"/>
-                      </svg>
-                      Scan Drive
-                    </Button>
-                  </div>
-                </div>
+  <div className="drive-section-header">
+    <h2 className="drive-section-title">Drive Files</h2>
+    <div className="button-group space-x-2">
+      <Button 
+        tone='accent' 
+        onClick={async () => {
+          // Get all unapproved files
+          const unapprovedFiles = driveProps.filter(f => !f.approved);
+          if (unapprovedFiles.length === 0) {
+            setNotification('All files are already approved');
+            return;
+          }
+          
+          setLoading('approveAll', true);
+          try {
+            let successCount = 0;
+            for (const file of unapprovedFiles) {
+              const label = (customLabels[file.id] && customLabels[file.id].trim()) 
+                ? customLabels[file.id].trim() 
+                : file.proposed_category;
+                
+              if (!label) continue;
+              
+              try {
+                // First ensure the folder exists
+                await call('/drive/create_folder', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name: label })
+                });
+                
+                // Then approve the file
+                const response = await call('/drive/approve', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ 
+                    file: { 
+                      id: file.id, 
+                      name: file.name, 
+                      mimeType: file.mimeType || '', 
+                      parents: file.parents || [] 
+                    }, 
+                    category: label 
+                  })
+                });
+                
+                if (!response?.error) {
+                  successCount++;
+                  // Update the file in the local state
+                  setDriveProps(prev => 
+                    prev.map(f => 
+                      f.id === file.id 
+                        ? { 
+                            ...f, 
+                            approved: true, 
+                            final_category: response.file?.final_category || label 
+                          } 
+                        : f
+                    )
+                  );
+                }
+              } catch (error) {
+                console.error(`Error approving file ${file.name}:`, error);
+              }
+            }
+            
+            if (successCount > 0) {
+              setNotification(`Successfully approved ${successCount} file(s)`);
+            } else {
+              setNotification('Failed to approve any files. Please try again.');
+            }
+          } finally {
+            setLoading('approveAll', false);
+          }
+        }}
+        disabled={isLoading('approveAll') || isLoading('refreshDrive') || driveProps.every(f => f.approved)}
+        loading={isLoading('approveAll')}
+        className="professional-button"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+        </svg>
+        Approve All
+      </Button>
+      <Button 
+        tone='secondary' 
+        onClick={refreshDrive} 
+        disabled={isLoading('refreshDrive') || isLoading('approveAll')} 
+        loading={isLoading('refreshDrive')} 
+        className="professional-button"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+        </svg>
+        Refresh Files
+      </Button>
+      <Button 
+        tone='primary' 
+        onClick={handleScan} 
+        disabled={isScanning} 
+        loading={isScanning} 
+        className="professional-button"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z"/>
+        </svg>
+        Scan Drive
+      </Button>
+    </div>
+  </div>
                 
                 {driveProps.length > 0 ? (
                   <div className="grid gap-4">
                     {driveProps.map((file, index) => (
-                      <div key={file.id} className={`drive-file-card fade-in ${driveAnalyzedId === file.id ? 'selected' : ''}`} style={{animationDelay: `${index * 0.1}s`}}>
+                      <div key={file.id} className={`drive-file-card fade-in ${driveAnalyzedId === file.id ? 'selected' : ''} ${file.approved ? 'approved-file' : ''}`} style={{animationDelay: `${index * 0.1}s`}}>
                         <div className="file-header">
                           <div className="file-info">
                             <div className="flex items-center gap-3 mb-2">
@@ -1134,7 +1235,16 @@ export default function App() {
                               )}
                             </div>
                             <div className="file-category">
-                              Proposed Category: {file.proposed_category}
+                              {file.approved ? (
+                                <div className="file-approved-badge">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                  </svg>
+                                  {file.approved ? 'Approved' : 'Approve'}d to: {file.final_category || file.proposed_category}
+                                </div>
+                              ) : (
+                                `Proposed Category: ${file.proposed_category}`
+                              )}
                             </div>
                             <div className="custom-category-container">
                               <label className="custom-category-label">Custom Category:</label>
@@ -1212,44 +1322,68 @@ export default function App() {
                               </svg>
                               {driveAnalyzedId === file.id ? 'Selected' : 'Analyze'}
                             </button>
-                            <button className="file-action-button approve" onClick={async () => {
-                              const label = (customLabels[file.id] && customLabels[file.id].trim()) ? customLabels[file.id].trim() : file.proposed_category
-                              if (!label) { 
-                                setNotification('Please provide a category'); 
-                                return 
-                              }
-                              // Ensure folder exists (or create it), then approve using that label
-                              console.log('Creating/ensuring folder exists for label:', label);
-                              try {
-                                await call('/drive/create_folder', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ name: label })
-                                })
-                              } catch (error) {
-                                console.log('Folder creation error (might already exist):', error);
-                              }
-                              await call('/drive/approve', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ 
-                                  file: { 
-                                    id: file.id, 
-                                    name: file.name, 
-                                    mimeType: '', 
-                                    parents: [] 
-                                  }, 
-                                  category: label 
-                                })
-                              });
-                              setNotification(`Approved to "${label}"`)
-                              // Optionally refresh drive list
-                              await refreshDrive()
-                            }}>
+                            <button 
+                              className={`file-action-button ${file.approved ? 'approved' : 'approve'}`}
+                              onClick={async () => {
+                                if (file.approved) return; // Don't do anything if already approved
+                                
+                                const label = (customLabels[file.id] && customLabels[file.id].trim()) ? customLabels[file.id].trim() : file.proposed_category;
+                                if (!label) { 
+                                  setNotification('Please provide a category'); 
+                                  return;
+                                }
+                                
+                                // Ensure folder exists (or create it), then approve using that label
+                                console.log('Creating/ensuring folder exists for label:', label);
+                                try {
+                                  await call('/drive/create_folder', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ name: label })
+                                  });
+                                  
+                                  const response = await call('/drive/approve', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ 
+                                      file: { 
+                                        id: file.id, 
+                                        name: file.name, 
+                                        mimeType: file.mimeType || '', 
+                                        parents: file.parents || [] 
+                                      }, 
+                                      category: label 
+                                    })
+                                  });
+                                  
+                                  if (response?.error) {
+                                    setNotification(`Error: ${response.error}`);
+                                  } else {
+                                    // Update the file in the local state instead of refreshing the whole list
+                                    setDriveProps(prev => 
+                                      prev.map(f => 
+                                        f.id === file.id 
+                                          ? { 
+                                              ...f, 
+                                              approved: true, 
+                                              final_category: response.file?.final_category || label 
+                                            } 
+                                          : f
+                                      )
+                                    );
+                                    setNotification(`Approved to "${label}"`);
+                                  } 
+                                } catch (error) {
+                                  console.error('Error approving file:', error);
+                                  setNotification('Error approving file. Please try again.');
+                                }
+                              }}
+                              disabled={file.approved}
+                            >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                               </svg>
-                              Approve
+                              {file.approved ? 'Approved' : 'Approve'}
                             </button>
                           </div>
                         </div>
@@ -1619,7 +1753,7 @@ export default function App() {
                         </>
                       ) : (
                         <>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="search-icon interactive-icon">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="search-icon interactive-icon">
                             <path d="M15.5 14H14.71L14.43 13.73C15.41 12.59 16 11.11 16 9.5C16 5.91 13.09 3 9.5 3S3 5.91 3 9.5S5.91 16 9.5 16C11.11 16 12.59 15.41 13.73 14.43L14 14.71V15.5L19 20.49L20.49 19L15.5 14ZM9.5 14C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5S14 7.01 14 9.5S11.99 14 9.5 14Z"></path>
                           </svg>
                           <span>Search</span>

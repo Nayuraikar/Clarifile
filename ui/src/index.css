@@ -29,26 +29,26 @@ body {
 }
 
 :root {
-  /* Sophisticated Beige-Brown Professional Color Palette */
-  --bg-primary: #faf8f3;        /* Soft cream background */
-  --bg-secondary: #f5f2ec;      /* Light beige background */
-  --bg-tertiary: #ede7de;       /* Warm beige background */
-  --bg-card: #ffffff;           /* Pure white cards */
-  --bg-card-hover: #f9f6f0;     /* Warm card hover */
-  --bg-glass: rgba(255, 255, 255, 0.85); /* Glass morphism */
-  --text-primary: #2d2416;      /* Deep brown text */
-  --text-secondary: #5d4e37;    /* Medium brown text */
-  --text-muted: #8b7355;        /* Light brown muted text */
-  --accent-primary: #c19a6b;    /* Tan accent */
-  --accent-secondary: #d4a574;  /* Light tan accent */
-  --accent-gold: #daa520;       /* Gold accent */
-  --accent-bronze: #cd7f32;     /* Bronze accent */
-  --accent-hover: #b8935f;      /* Darker tan hover */
-  --accent-success: #8fbc8f;    /* Sage green success */
-  --accent-warning: #deb887;    /* Burlywood warning */
-  --accent-error: #cd5c5c;      /* Indian red error */
-  --border: #e6dfd4;            /* Soft beige border */
-  --border-hover: #d4c4b0;      /* Darker beige border */
+  
+  --bg-primary: #faf8f3;       
+  --bg-secondary: #f5f2ec;      
+  --bg-tertiary: #ede7de;       
+  --bg-card: #ffffff;           
+  --bg-card-hover: #f9f6f0;    
+  --bg-glass: rgba(255, 255, 255, 0.85); 
+  --text-primary: #2d2416;      
+  --text-secondary: #5d4e37;    
+  --text-muted: #8b7355;        
+  --accent-primary: #c19a6b;    
+  --accent-secondary: #d4a574;  
+  --accent-gold: #daa520;       
+  --accent-bronze: #cd7f32;     
+  --accent-hover: #b8935f;      
+  --accent-success: #8fbc8f;    
+  --accent-warning: #deb887;    
+  --accent-error: #cd5c5c;      
+  --border: #e6dfd4;            
+  --border-hover: #d4c4b0;      
   
   /* Professional gradient overlays */
   --gradient-primary: linear-gradient(135deg, #c19a6b 0%, #d4a574 50%, #daa520 100%);
@@ -116,7 +116,7 @@ body::after {
   }
 }
 
-/* Professional floating geometric shapes */
+/* floating geometric shapes */
 .professional-shapes {
   position: fixed;
   top: 0;

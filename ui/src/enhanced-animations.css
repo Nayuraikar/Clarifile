@@ -4180,7 +4180,8 @@ button:disabled svg,
 }
 
 .proposal-category::before {
-  content: "[FOLDER]";
+  content: "📁";
+  margin-right: 6px;
   font-size: 1rem;
 }
 
@@ -5639,15 +5640,27 @@ button[data-tone="success"] {
 }
 
 /* Button Group Spacing */
-.button-group {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin: 2rem 0;
+/* Approved file styles */
+.approved-file {
+  opacity: 0.9;
+  border-left: 3px solid #4CAF50;
+  background-color: rgba(76, 175, 80, 0.05);
+  transition: all 0.3s ease;
 }
 
-/* Navigation Button Consistency */
+.file-approved-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background-color: #e8f5e9;
+  border-radius: 12px;
+  color: #2e7d32;
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
 .professional-nav-item {
   min-height: 44px;
   display: inline-flex;
