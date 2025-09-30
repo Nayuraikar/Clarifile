@@ -508,6 +508,10 @@ def extract_text_from_image(path):
         return ""
 
 # --- Audio/Video + CV ---
+import speech_recognition as sr
+from pydub import AudioSegment
+import os
+import tempfile
 def classify_image(img_path):
     try:
         cv_model, transform = get_cv_model()
@@ -521,19 +525,236 @@ def classify_image(img_path):
         print("Image classification error:", e)
         return "Unknown image"
 
-# def transcribe_audio(path):  # Commented out due to NumPy version conflict
-#     try:
-#         whisper_model = get_whisper_model()
-#         result = whisper_model.transcribe(path)
-#         return result["text"]
-#     except Exception as e:
-#         print("Whisper error:", e)
-#         return ""
-
-def transcribe_audio(path):
-    # Placeholder function - Whisper disabled due to NumPy version conflict
-    print("Audio transcription disabled due to NumPy version conflict")
-    return ""
+def transcribe_audio(path, use_google=True):
+    """
+    Transcribe audio from an audio file using speech recognition.
+    Supports WAV, MP3, M4A, OGG, and FLAC formats.
+    
+    Args:
+        path (str): Path to the audio file
+        use_google (bool): Whether to use Google Speech Recognition (default: True)
+        
+    Returns:
+        str: Transcribed text or empty string if transcription fails
+    """
+    try:
+        import speech_recognition as sr
+        import os
+        import tempfile
+        from pydub import AudioSegment
+        import wave
+        import json
+        import subprocess
+        
+        # Check if file exists and has content
+        if not os.path.exists(path) or os.path.getsize(path) == 0:
+            print(f"Error: File not found or empty: {path}")
+            return ""
+            
+        # Initialize recognizer
+        r = sr.Recognizer()
+        
+        # Convert to WAV if needed
+        file_ext = os.path.splitext(path)[1].lower()
+        temp_wav = None
+        audio_path = path
+        
+        try:
+            if file_ext != '.wav':
+                # Create a temporary WAV file with unique name
+                temp_wav = os.path.join(tempfile.gettempdir(), f"temp_audio_{os.getpid()}.wav")
+                print(f"Converting {file_ext} to WAV format (16kHz, mono, 16-bit PCM)...")
+                
+                # First try ffmpeg for better format conversion
+                try:
+                    cmd = [
+                        'ffmpeg',
+                        '-y',  # Overwrite output file if it exists
+                        '-i', path,
+                        '-ar', '16000',  # Set sample rate to 16kHz
+                        '-ac', '1',      # Convert to mono
+                        '-acodec', 'pcm_s16le',  # 16-bit PCM
+                        '-loglevel', 'error',
+                        temp_wav
+                    ]
+                    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                    if result.stderr:
+                        print(f"FFmpeg warnings: {result.stderr}")
+                    
+                    # Verify the output file
+                    if os.path.exists(temp_wav) and os.path.getsize(temp_wav) > 0:
+                        audio_path = temp_wav
+                        print("FFmpeg conversion successful")
+                    else:
+                        raise Exception("FFmpeg conversion produced empty file")
+                        
+                except (subprocess.CalledProcessError, Exception) as e:
+                    print(f"FFmpeg conversion failed: {str(e)}")
+                    print("Falling back to pydub for conversion...")
+                    
+                    try:
+                        # Convert to WAV using pydub as fallback
+                        audio = AudioSegment.from_file(path)
+                        print(f"Original audio info - channels: {audio.channels}, sample_width: {audio.sample_width}, frame_rate: {audio.frame_rate}")
+                        
+                        # Convert to mono if stereo
+                        if audio.channels > 1:
+                            audio = audio.set_channels(1)
+                        
+                        # Set frame rate to 16kHz
+                        audio = audio.set_frame_rate(16000)
+                        
+                        # Ensure 16-bit PCM
+                        if audio.sample_width != 2:  # 2 bytes = 16 bits
+                            audio = audio.set_sample_width(2)
+                        
+                        # Export with specific format
+                        audio.export(
+                            temp_wav,
+                            format="wav",
+                            parameters=[
+                                '-ar', '16000',
+                                '-ac', '1',
+                                '-acodec', 'pcm_s16le'
+                            ]
+                        )
+                        
+                        if os.path.exists(temp_wav) and os.path.getsize(temp_wav) > 0:
+                            audio_path = temp_wav
+                            print("Pydub conversion successful")
+                        else:
+                            raise Exception("Pydub conversion produced empty file")
+                            
+                    except Exception as e:
+                        print(f"Pydub conversion also failed: {str(e)}")
+                        return ""
+            
+            # Verify WAV file is valid
+            try:
+                with wave.open(audio_path, 'rb') as wav_file:
+                    channels = wav_file.getnchannels()
+                    sample_width = wav_file.getsampwidth()
+                    frame_rate = wav_file.getframerate()
+                    
+                    print(f"WAV file info - Channels: {channels}, Sample Width: {sample_width}, Frame Rate: {frame_rate}")
+                    
+                    if channels != 1 or sample_width != 2:
+                        error_msg = f"WAV file must be mono (1 channel) and 16-bit PCM (got {channels} channels, {sample_width*8}-bit)"
+                        print(error_msg)
+                        
+                        # Try to fix the file if possible
+                        if channels != 1 or sample_width != 2:
+                            print("Attempting to fix audio format...")
+                            fixed_wav = os.path.join(tempfile.gettempdir(), f"fixed_audio_{os.getpid()}.wav")
+                            try:
+                                audio = AudioSegment.from_wav(audio_path)
+                                if channels != 1:
+                                    audio = audio.set_channels(1)
+                                if sample_width != 2:
+                                    audio = audio.set_sample_width(2)
+                                audio.export(fixed_wav, format="wav")
+                                
+                                # Verify the fixed file
+                                with wave.open(fixed_wav, 'rb') as fixed_wav_file:
+                                    if fixed_wav_file.getnchannels() == 1 and fixed_wav_file.getsampwidth() == 2:
+                                        audio_path = fixed_wav
+                                        if temp_wav and os.path.exists(temp_wav):
+                                            try:
+                                                os.remove(temp_wav)
+                                            except:
+                                                pass
+                                        temp_wav = fixed_wav
+                                        print("Successfully fixed audio format")
+                                    else:
+                                        raise Exception("Failed to fix audio format")
+                            except Exception as fix_error:
+                                print(f"Failed to fix audio format: {fix_error}")
+                                return ""
+                        else:
+                            return ""
+            except Exception as e:
+                print(f"Invalid WAV file: {e}")
+                return ""
+            
+            # Try Google Speech Recognition first (if enabled)
+            if use_google:
+                try:
+                    print("Trying Google Speech Recognition...")
+                    with sr.AudioFile(audio_path) as source:
+                        audio_data = r.record(source)
+                        text = r.recognize_google(audio_data, language='en-US')
+                        print("Google Speech Recognition successful")
+                        return text
+                except sr.UnknownValueError:
+                    print("Google Speech Recognition could not understand audio")
+                except sr.RequestError as e:
+                    print(f"Google Speech Recognition service error: {e}")
+                except Exception as e:
+                    print(f"Error with Google Speech Recognition: {e}")
+            
+            # Try Vosk as fallback
+            try:
+                print("Trying Vosk offline recognition...")
+                import vosk
+                
+                # Download Vosk model if not present
+                model_dir = os.path.join(tempfile.gettempdir(), "vosk-model-small-en-us")
+                model_zip = os.path.join(tempfile.gettempdir(), "vosk-model-small-en-us.zip")
+                
+                if not os.path.exists(model_dir):
+                    print("Downloading Vosk model...")
+                    import urllib.request
+                    import zipfile
+                    
+                    model_url = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+                    urllib.request.urlretrieve(model_url, model_zip)
+                    
+                    with zipfile.ZipFile(model_zip, 'r') as zip_ref:
+                        zip_ref.extractall(tempfile.gettempdir())
+                    
+                    try:
+                        os.remove(model_zip)
+                    except:
+                        pass
+                
+                # Initialize Vosk model
+                model = vosk.Model(model_dir)
+                rec = vosk.KaldiRecognizer(model, 16000)
+                
+                # Process audio file
+                result = []
+                with open(audio_path, 'rb') as f:
+                    while True:
+                        data = f.read(4000)
+                        if len(data) == 0:
+                            break
+                        if rec.AcceptWaveform(data):
+                            result.append(json.loads(rec.Result())['text'])
+                
+                # Get final result
+                result.append(json.loads(rec.FinalResult())['text'])
+                text = ' '.join([r for r in result if r.strip()])
+                
+                if text.strip():
+                    print("Vosk recognition successful")
+                    return text
+                
+            except Exception as e:
+                print(f"Vosk recognition failed: {e}")
+            
+            return ""
+                    
+        finally:
+            # Clean up temporary file if it was created
+            if temp_wav and os.path.exists(temp_wav):
+                try:
+                    os.remove(temp_wav)
+                except Exception as e:
+                    print(f"Error removing temp file {temp_wav}: {e}")
+                    
+    except Exception as e:
+        print(f"Error in transcribe_audio: {e}")
+        return ""
 
 FFMPEG_PATH = "/opt/homebrew/bin/ffmpeg"
 
@@ -2553,16 +2774,22 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                     # EXTRACT TEXT AND CATEGORIZE
                     ext = os.path.splitext(file_name)[1].lower()
                     text = ""
-                    
                     if ext == ".txt":
                         text = read_text_file(path)
                     elif ext == ".pdf":
                         text = extract_text_from_pdf(path)
                     elif ext in {".png", ".jpg", ".jpeg"}:
                         text = extract_text_from_image(path)
+                    elif ext in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}:
+                        print(f"Transcribing audio file: {file_name}")
+                        text = transcribe_audio(path)
+                        if text:
+                            print(f"Transcribed {len(text)} characters from audio")
+                        else:
+                            print("Failed to transcribe audio")
                     else:
                         text = read_text_file(path)
-                    
+                        
                     print(f"Extracted {len(text) if text else 0} chars from {file_name}")
                     
                     # USE SMART CATEGORIZATION
@@ -2575,7 +2802,10 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                             print(f"Categorized {file_name} as: {category_name}")
                     else:
                         print(f"No content extracted from {file_name}")
-                        category_name = "NO_CONTENT"
+                        if ext in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}:
+                            category_name = "Audio/Recordings"
+                        else:
+                            category_name = "NO_CONTENT"
                     
                     category_id = None
                     
