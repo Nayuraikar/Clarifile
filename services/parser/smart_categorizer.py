@@ -6,31 +6,34 @@ Integrates with Clarifile's existing parser service.
 """
 
 import os
+import re
 import json
-from tqdm import tqdm
 import numpy as np
+import argparse
+import joblib
+import warnings
+import mimetypes
 
-# Text & file libs
+# Text & file processing
 import pdfplumber
 import docx
 from PIL import Image
-import pytesseract
-
-# Embedding & clustering
+from pdf2image import convert_from_path
 from sentence_transformers import SentenceTransformer
-from sklearn.cluster import KMeans
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-# Optional: if you installed pdf2image and want OCR fallback for scanned PDFs
+# Suppress specific warnings
+warnings.filterwarnings('ignore', category=FutureWarning, message='`resume_download`')  # Suppress specific download warning
+warnings.filterwarnings('ignore', category=UserWarning)  # Suppress other user warnings
+
+# Check for PDF to image conversion support
 try:
-    from pdf2image import convert_from_path
     PDF2IMAGE = True
 except Exception:
     PDF2IMAGE = False
 
 class SmartCategorizer:
-    """Smart content-based file categorizer using embeddings and clustering."""
-
     def __init__(self, model_name="all-MiniLM-L6-v2"):
         """Initialize the categorizer with the embedding model."""
         self.model_name = model_name
@@ -49,42 +52,78 @@ class SmartCategorizer:
 
     def extract_text(self, path, max_chars=15000, ocr_if_empty=True):
         """Extract text from a file based on its type."""
-        ext = os.path.splitext(path)[1].lower()
-        text = ""
-
         try:
-            if ext in (".txt", ".md", ".csv", ".log"):
-                with open(path, "r", encoding="utf8", errors="ignore") as f:
-                    text = f.read()
-            elif ext == ".pdf":
-                try:
-                    with pdfplumber.open(path) as pdf:
-                        pages_text = [p.extract_text() or "" for p in pdf.pages]
-                        text = "\n".join(pages_text).strip()
-                except Exception:
-                    text = ""
-                # fallback to OCR if empty and pdf2image available
-                if (not text) and ocr_if_empty and PDF2IMAGE:
-                    imgs = convert_from_path(path)
-                    text = "\n".join(pytesseract.image_to_string(img) for img in imgs)
-            elif ext in (".docx",):
-                doc = docx.Document(path)
-                text = "\n".join([p.text for p in doc.paragraphs])
-            elif ext in (".png", ".jpg", ".jpeg", ".tiff", ".bmp"):
-                text = pytesseract.image_to_string(Image.open(path))
-            else:
-                # try reading first chunk as text
-                with open(path, "rb") as f:
-                    raw = f.read(200000)
-                    try:
-                        text = raw.decode("utf8", errors="ignore")
-                    except:
-                        text = ""
-        except Exception as e:
-            print(f"Warning reading {path}: {e}")
+            # Check if file exists
+            if not os.path.exists(path):
+                print(f"File not found: {path}")
+                return ""
 
-        text = " ".join(text.split())
-        return text[:max_chars]
+            # Check file size
+            file_size = os.path.getsize(path)
+            if file_size == 0:
+                return ""
+
+            # Get file extension and MIME type
+            _, ext = os.path.splitext(path.lower())
+            mime_type, _ = mimetypes.guess_type(path)
+            
+            # Enhanced Audio/Video file handling
+            if mime_type and (mime_type.startswith(('audio/', 'video/')) or ext in ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.mp4', '.mov', '.avi', '.mkv']):
+                file_info = {
+                    'type': 'audio' if (mime_type and mime_type.startswith('audio/')) or ext in ['.mp3', '.wav', '.ogg', '.m4a', '.aac'] else 'video',
+                    'mime_type': mime_type or 'application/octet-stream',
+                    'size': file_size,
+                    'name': os.path.basename(path),
+                    'path': path,
+                    'extension': ext,
+                    'last_modified': os.path.getmtime(path)
+                }
+                print(f"DEBUG: Created file info for {path}: {file_info}")
+                return json.dumps(file_info, indent=2)  # Pretty print for better debugging
+
+            # Handle specific document types
+            if ext == '.docx':
+                try:
+                    doc = docx.Document(path)
+                    return "\n".join([p.text for p in doc.paragraphs])
+                except Exception as e:
+                    print(f"Error reading DOCX {path}: {e}")
+                    return ""
+
+            # Handle images with OCR if available
+            if ext in (".png", ".jpg", ".jpeg", ".tiff", ".bmp"):
+                if PDF2IMAGE:
+                    try:
+                        img = Image.open(path)
+                        return pytesseract.image_to_string(img)[:max_chars]
+                    except Exception as e:
+                        print(f"OCR failed for {path}: {e}")
+                return ""
+
+            # Text files
+            if mime_type and mime_type.startswith('text/'):
+                try:
+                    with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                        return f.read(max_chars)
+                except Exception as e:
+                    print(f"Error reading text file {path}: {e}")
+                    return ""
+
+            # Try to read as binary text
+            try:
+                with open(path, 'rb') as f:
+                    content = f.read(max_chars)
+                    try:
+                        return content.decode('utf-8', errors='ignore')
+                    except UnicodeDecodeError:
+                        return ""
+            except Exception as e:
+                print(f"Error reading binary file {path}: {e}")
+                return ""
+                
+        except Exception as e:
+            print(f"Unexpected error processing {path}: {e}")
+            return ""
 
     def choose_k_auto(self, embeddings, min_k=2, max_k=10):
         """Automatically choose the optimal number of clusters using silhouette score."""
@@ -227,14 +266,28 @@ class SmartCategorizer:
         Returns:
             Category name in format "Category: Subcategory"
         """
-        print(f"DEBUG: categorize_content called with content length: {len(content) if content else 0}")
+        print(f"\n=== DEBUG: categorize_content called ===")
+        print(f"Content type: {content_type}")
+        print(f"Content length: {len(content) if content else 0}")
+        print(f"First 100 chars: {content[:100] if content else 'N/A'}")
         
-        if not content.strip():
+        if not content or not content.strip():
             print("DEBUG: No content provided, returning Uncategorized")
             return "Uncategorized: General"
 
+        # Check if content is a JSON string (for audio/video files)
         try:
+            file_info = json.loads(content)
+            if isinstance(file_info, dict):
+                print("DEBUG: Detected JSON content, processing as file metadata...")
+                return self._analyze_content_semantically(content, content.lower(), None)
+        except (json.JSONDecodeError, TypeError):
+            pass  # Not a JSON string, continue with normal processing
+
+        try:
+            print("DEBUG: Loading model for semantic analysis...")
             self.load_model()
+            print("DEBUG: Model loaded successfully")
         except Exception as e:
             print(f"DEBUG: Failed to load model, using fallback: {e}")
             return self._keyword_based_categorization(content.lower())
@@ -264,6 +317,36 @@ class SmartCategorizer:
         """
         Perform semantic analysis using multiple signals to determine category.
         """
+        # Check if content is a JSON string with file metadata
+        try:
+            file_info = json.loads(content)
+            if isinstance(file_info, dict):
+                file_type = file_info.get('type', '').lower()
+                mime_type = file_info.get('mime_type', '').lower()
+                file_name = file_info.get('name', '').lower()
+                
+                print(f"DEBUG: Processing file metadata - Type: {file_type}, MIME: {mime_type}, Name: {file_name}")
+                
+                if file_type == 'audio' or 'audio/' in mime_type or any(ext in file_name for ext in ['.mp3', '.wav', '.ogg', '.m4a', '.aac']):
+                    # Try to determine audio type from filename
+                    if any(term in file_name for term in ['meeting', 'call', 'interview', 'conversation']):
+                        return "Media: Audio - Meeting/Interview"
+                    elif any(term in file_name for term in ['lecture', 'presentation', 'talk']):
+                        return "Media: Audio - Lecture/Presentation"
+                    elif any(term in file_name for term in ['music', 'song', 'track']):
+                        return "Media: Audio - Music"
+                    else:
+                        return "Media: Audio File"
+                elif file_type == 'video' or 'video/' in mime_type or any(ext in file_name for ext in ['.mp4', '.mov', '.avi', '.mkv']):
+                    return "Media: Video File"
+                elif file_type == 'binary' or not mime_type.startswith(('text/', 'application/')):
+                    return "File: Binary Data"
+                
+                print(f"DEBUG: File metadata processed but no specific type matched: {file_info}")
+                
+        except (json.JSONDecodeError, TypeError) as e:
+            print(f"DEBUG: Not a JSON string or invalid format: {e}")
+            pass  # Not a JSON string, continue with normal processing
         
         # 1. Academic/Research Paper Detection (Enhanced)
         academic_indicators = {
@@ -353,14 +436,61 @@ class SmartCategorizer:
         if tech_score >= 2:
             return "Technical: Documentation"
         
-        # 6. Personal Document Detection
+        # 6. Scientific/Chemical Analysis Detection (Enhanced)
+        scientific_indicators = {
+            'analysis_terms': ['analysis', 'analyze', 'analyzed', 'analysed', 'qualitative', 'quantitative', 'assay', 'test', 'examination', 'evaluation'],
+            'scientific_terms': ['sulphur', 'sulfur', 'chemical', 'compound', 'element', 'sample', 'specimen', 'laboratory', 'lab', 'research', 'study', 'data'],
+            'methods': ['spectroscopy', 'chromatography', 'titration', 'reaction', 'synthesis', 'preparation', 'reconstruction', 'imaging', 'microscopy', 'spectrometry'],
+            'measurements': ['concentration', 'purity', 'yield', 'percentage', 'ratio', 'measurement', 'matrix', 'structural', 'parameter'],
+            'visualization': ['photo', 'image', 'micrograph', 'micrography', 'microscopy', 'sketch', 'diagram', 'figure', 'graph', 'plot']
+        }
+        
+        scientific_score = 0
+        matched_terms = set()
+        
+        for category, terms in scientific_indicators.items():
+            category_matches = [term for term in terms if term in content_lower]
+            matches_count = len(category_matches)
+            matched_terms.update(category_matches)
+            
+            # Weight different categories differently
+            if category == 'analysis_terms':
+                scientific_score += matches_count * 1.5
+            elif category in ['scientific_terms', 'methods']:
+                scientific_score += matches_count * 1.3
+            else:
+                scientific_score += matches_count
+        
+        print(f"DEBUG: Scientific analysis score: {scientific_score:.1f}")
+        print(f"DEBUG: Matched scientific terms: {', '.join(matched_terms) if matched_terms else 'None'}")
+        
+        if scientific_score >= 2:  # Lowered threshold to catch more scientific content
+            # Enhanced type detection
+            if any(term in content_lower for term in ['sulphur', 'sulfur']):
+                if any(term in content_lower for term in ['photo', 'image', 'micrograph', 'sketch']):
+                    return "Science: Imaging - Sulphur Analysis"
+                return "Science: Chemical Analysis - Sulphur"
+            elif any(term in content_lower for term in ['photo', 'image', 'micrograph', 'sketch']):
+                if any(term in content_lower for term in ['reconstruct', 'reconstruction', '3d']):
+                    return "Science: Reconstructed Imaging Analysis"
+                return "Science: Image Analysis"
+            elif any(term in content_lower for term in ['matrix', 'structural', 'quantitative']):
+                return "Science: Structural Analysis"
+            elif any(term in content_lower for term in ['organic', 'compound', 'molecule']):
+                return "Science: Organic Chemical Analysis"
+            elif any(term in content_lower for term in ['metal', 'inorganic', 'mineral']):
+                return "Science: Inorganic Chemical Analysis"
+            else:
+                return "Science: General Analysis"
+        
+        # 7. Personal Document Detection
         personal_indicators = ['personal', 'diary', 'journal', 'note', 'reminder', 'todo', 'private']
         personal_score = sum(1 for term in personal_indicators if term in content_lower)
         
         if personal_score >= 1:
             return "Personal: Notes"
         
-        # 7. Use semantic similarity for final classification
+        # 8. Use semantic similarity for final classification
         # This is where the transformer embedding really helps
         return self._semantic_similarity_classification(content, embedding)
     
@@ -368,9 +498,16 @@ class SmartCategorizer:
         """
         Use semantic similarity to classify content against known categories.
         """
-        # Define category prototypes with example content
+        # Define category prototypes with example content (Enhanced with more specific categories)
         category_prototypes = {
             "Academic: Research Paper": "research study methodology results analysis findings academic paper",
+            "Science: Chemical Analysis - Sulphur": "sulphur sulfur chemical analysis experiment lab test results data compound quantitative measurement",
+            "Science: Chemical Analysis - Organic": "organic compound molecule analysis chemical structure formula synthesis reaction",
+            "Science: Chemical Analysis - Inorganic": "inorganic metal mineral analysis chemical composition structure properties",
+            "Science: Imaging Analysis": "photo image micrograph microscopy analysis visualization structure composition",
+            "Science: Reconstructed Imaging": "3d reconstruction imaging analysis model structure visualization tomography",
+            "Science: Structural Analysis": "matrix structural analysis quantitative measurement parameters properties material",
+            "Science: Laboratory Report": "laboratory experiment test results methodology analysis data findings conclusion",
             "Finance: Documents": "invoice payment bill financial budget expense cost money",
             "Work: Meeting": "meeting agenda minutes discussion team project work business",
             "Legal: Contract": "contract agreement legal terms conditions law clause party",
@@ -396,7 +533,14 @@ class SmartCategorizer:
             print(f"Best semantic match: {best_category} (similarity: {best_similarity:.3f})")
             
             # Only use semantic match if similarity is high enough
-            if best_similarity > 0.3:
+            print(f"DEBUG: Best semantic match: {best_category} (similarity: {best_similarity:.3f})")
+            
+            # Adjust threshold based on content length and confidence
+            threshold = 0.25  # Lower threshold to catch more cases
+            if len(content.strip().split()) < 20:  # For very short content
+                threshold = 0.2
+                
+            if best_similarity > threshold:
                 return best_category
                 
         except Exception as e:
@@ -407,15 +551,23 @@ class SmartCategorizer:
     
     def _keyword_based_categorization(self, text_lower):
         """
-        Fallback keyword-based categorization.
+        Enhanced keyword-based categorization with better scientific term coverage.
         """
-        # Enhanced keyword matching with scoring
+        # Enhanced keyword matching with scoring and more specific categories
         category_keywords = {
-            "Academic: Research Paper": ['academic', 'research', 'paper', 'study', 'thesis', 'analysis', 'methodology'],
-            "Computer Science: Technical": ['software', 'programming', 'code', 'algorithm', 'computer', 'technical'],
-            "Work: Meeting": ['meeting', 'minutes', 'agenda', 'report', 'business', 'team'],
-            "Finance: Documents": ['invoice', 'payment', 'financial', 'budget', 'bill', 'cost', 'expense'],
-            "Legal: Contracts": ['contract', 'legal', 'agreement', 'terms', 'law', 'clause']
+            "Academic: Research Paper": ['academic', 'research', 'paper', 'study', 'thesis', 'analysis', 'methodology', 'literature'],
+            "Science: Chemical Analysis - Sulphur": ['sulphur', 'sulfur', 'sulfate', 'sulphate', 'thiol', 'thio', 'sulfide'],
+            "Science: Chemical Analysis - Organic": ['organic', 'compound', 'molecule', 'polymer', 'carbon', 'hydrocarbon'],
+            "Science: Chemical Analysis - Inorganic": ['inorganic', 'metal', 'alloy', 'mineral', 'oxide', 'salt'],
+            "Science: Imaging Analysis": ['photo', 'image', 'micrograph', 'microscopy', 'microscope', 'visualization'],
+            "Science: Reconstructed Imaging": ['reconstruct', 'reconstruction', '3d', 'tomography', 'volume', 'render'],
+            "Science: Structural Analysis": ['matrix', 'structural', 'quantitative', 'morphology', 'crystal', 'lattice'],
+            "Science: Laboratory Report": ['experiment', 'laboratory', 'lab', 'results', 'data', 'findings', 'conclusion', 'method', 'procedure', 'observation', 'measurement'],
+            "Science: General Analysis": ['analysis', 'analyze', 'analyzed', 'analysed', 'qualitative', 'quantitative', 'assay', 'test', 'examination', 'evaluation', 'characterization'],
+            "Computer Science: Technical": ['software', 'programming', 'code', 'algorithm', 'computer', 'technical', 'computation', 'simulation'],
+            "Work: Meeting": ['meeting', 'minutes', 'agenda', 'report', 'business', 'team', 'project', 'discussion'],
+            "Finance: Documents": ['invoice', 'payment', 'financial', 'budget', 'bill', 'cost', 'expense', 'transaction'],
+            "Legal: Contracts": ['contract', 'legal', 'agreement', 'terms', 'law', 'clause', 'party', 'signature']
         }
         
         best_category = "General: Document"

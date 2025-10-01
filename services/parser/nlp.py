@@ -3,7 +3,15 @@ import os
 import time
 import requests
 import re
+import nltk
 from typing import Dict
+from nltk.tokenize import sent_tokenize
+
+# Ensure NLTK resources are downloaded
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEYS", "").split(",") if k.strip()]

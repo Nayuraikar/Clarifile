@@ -3102,9 +3102,56 @@ def find_synonym_matches(text_lower, query_words, word_positions):
 # --- Search functionality ---
 class SearchRequest(BaseModel):
     query: str
+    use_semantic: bool = True  # Enable semantic search by default
+    semantic_weight: float = 0.7  # Weight for semantic search in hybrid mode
+    min_score: float = 0.2  # Minimum confidence score (0-1)
+    top_k: int = 10  # Maximum number of results to return
+
+# Import semantic search
+from semantic_search import hybrid_search, clean_query
+import torch
+
+def get_context_around_match(text: str, query_terms: set, window_size: int = 150) -> str:
+    """Extract a window of text around the best match for the query."""
+    if not text or not query_terms:
+        return text[:window_size] + ('...' if len(text) > window_size else '')
+    
+    # Find all positions where query terms appear
+    text_lower = text.lower()
+    positions = []
+    
+    for term in query_terms:
+        pos = text_lower.find(term.lower())
+        if pos != -1:
+            positions.append((pos, term))
+    
+    if not positions:
+        # No exact match, return beginning of text
+        return text[:window_size] + ('...' if len(text) > window_size else '')
+    
+    # Sort by position
+    positions.sort()
+    
+    # Get the first match position
+    first_pos, first_term = positions[0]
+    
+    # Calculate window around the first match
+    start = max(0, first_pos - (window_size // 2))
+    end = min(len(text), first_pos + len(first_term) + (window_size // 2))
+    
+    # Extract the window
+    snippet = text[start:end]
+    
+    # Add ellipsis if needed
+    if start > 0:
+        snippet = '...' + snippet
+    if end < len(text):
+        snippet = snippet + '...'
+    
+    return snippet
 
 @app.post("/search_files")
-def search_files(req: SearchRequest, auth_token: str | None = Query(None)):
+async def search_files(req: SearchRequest, auth_token: str | None = Query(None)):
     """
     Search Google Drive files by content. Supports PDF, TXT, and DOCS files.
     Returns files that contain the search query in their content.
@@ -3181,39 +3228,187 @@ def search_files(req: SearchRequest, auth_token: str | None = Query(None)):
                 except Exception:
                     pass
                 
-                # Smart search with fuzzy matching, typo tolerance, and similar words
-                match_result = smart_search_in_text(text_content, query)
-                if match_result:
-                    print(f"Found match in file: {file['name']} (score: {match_result['score']:.2f})")
-                    
-                    matching_files.append({
+                # Prepare document for semantic search
+                doc = {
+                    'text': text_content,
+                    'metadata': {
                         'id': file['id'],
                         'name': file['name'],
                         'mimeType': file['mimeType'],
                         'size': file.get('size', 0),
-                        'modifiedTime': file.get('modifiedTime', ''),
-                        'context': match_result['context'],
-                        'match_position': match_result['position'],
-                        'match_score': match_result['score'],
-                        'match_type': match_result['match_type'],
-                        'matched_text': match_result['matched_text'],
-                        'drive_url': f"https://drive.google.com/file/d/{file['id']}/view"
-                    })
+                        'modifiedTime': file.get('modifiedTime', '')
+                    }
+                }
+                
+                # Use semantic search if enabled, otherwise use traditional search
+                if req.use_semantic:
+                    # For semantic search, we'll process all files first
+                    matching_files.append(doc)
+                else:
+                    # Fall back to traditional search
+                    match_result = smart_search_in_text(text_content, query)
+                    if match_result:
+                        print(f"Found match in file: {file['name']} (score: {match_result['score']:.2f})")
+                        
+                        matching_files.append({
+                            'id': file['id'],
+                            'name': file['name'],
+                            'mimeType': file['mimeType'],
+                            'size': file.get('size', 0),
+                            'modifiedTime': file.get('modifiedTime', ''),
+                            'context': match_result['context'],
+                            'match_position': match_result['position'],
+                            'match_score': match_result['score'],
+                            'match_type': match_result['match_type'],
+                            'matched_text': match_result['matched_text'],
+                            'drive_url': f"https://drive.google.com/file/d/{file['id']}/view"
+                        })
                     
             except Exception as e:
                 print(f"Error processing file {file['name']}: {e}")
                 continue
         
-        # Sort results by match score (highest first)
-        matching_files.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+        # Process semantic search results if enabled
+        if req.use_semantic and matching_files:
+            print(f"Performing semantic search on {len(matching_files)} files...")
+            
+            try:
+                # Clean query for context extraction
+                clean_q = clean_query(req.query)
+                query_terms = set(clean_q.split())
+                
+                # Use hybrid search for better results
+                search_results = hybrid_search(
+                    query=req.query,
+                    documents=matching_files,
+                    semantic_weight=req.semantic_weight,
+                    top_k=req.top_k,
+                    min_score=req.min_score
+                )
+                
+                # Format results for response
+                formatted_results = []
+                
+                for result in search_results:
+                    metadata = result.get('metadata', {})
+                    best_chunk = result.get('best_chunk', '')
+                    
+                    # Get a better context snippet around the best matching part
+                    context = get_context_around_match(
+                        text=best_chunk or metadata.get('text', ''),
+                        query_terms=query_terms
+                    )
+                    
+                    # Calculate a confidence percentage (0-100%)
+                    confidence = min(100, int(result['score'] * 100))
+                    
+                    formatted_results.append({
+                        'id': metadata.get('id'),
+                        'name': metadata.get('name', 'Untitled'),
+                        'mimeType': metadata.get('mimeType', ''),
+                        'size': metadata.get('size', 0),
+                        'modifiedTime': metadata.get('modifiedTime', ''),
+                        'context': context,
+                        'confidence': confidence,
+                        'match_score': round(result['score'], 4),
+                        'semantic_score': round(result.get('semantic_score', 0), 4),
+                        'keyword_score': round(result.get('keyword_score', 0), 4),
+                        'match_type': result.get('match_type', 'hybrid'),
+                        'drive_url': f"https://drive.google.com/file/d/{metadata.get('id', '')}/view"
+                    })
+                
+                print(f"Semantic search completed. Found {len(formatted_results)} relevant files")
+                
+                return {
+                    'query': req.query,
+                    'total_searched': len(files),
+                    'matches_found': len(formatted_results),
+                    'files': formatted_results,
+                    'search_type': 'semantic',
+                    'search_params': {
+                        'semantic_weight': req.semantic_weight,
+                        'min_score': req.min_score,
+                        'top_k': req.top_k
+                    }
+                }
+                
+            except Exception as e:
+                print(f"Error in semantic search: {str(e)}")
+                # Fall back to keyword search if semantic search fails
+                print("Falling back to keyword search...")
+                req.use_semantic = False
+        # For non-semantic search or fallback, use keyword search
+        if not req.use_semantic and matching_files:
+            # Clean query for keyword search
+            clean_q = clean_query(req.query)
+            query_terms = set(clean_q.split())
+            
+            # Calculate scores based on term frequency
+            scored_files = []
+            for file in matching_files:
+                text = file.get('text', '').lower()
+                
+                # Simple term frequency scoring
+                if query_terms:
+                    term_matches = sum(1 for term in query_terms if term in text)
+                    score = term_matches / len(query_terms)
+                else:
+                    score = 0
+                
+                # Only include files with some matches
+                if score > 0:
+                    file['match_score'] = score
+                    file['match_type'] = 'keyword'
+                    scored_files.append(file)
+            
+            # Sort by score (highest first)
+            scored_files.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+            
+            # Apply top_k limit
+            scored_files = scored_files[:req.top_k]
+            
+            # Format results
+            formatted_results = []
+            for file in scored_files:
+                context = get_context_around_match(
+                    text=file.get('text', ''),
+                    query_terms=query_terms
+                )
+                
+                formatted_results.append({
+                    'id': file.get('id'),
+                    'name': file.get('name', 'Untitled'),
+                    'mimeType': file.get('mimeType', ''),
+                    'size': file.get('size', 0),
+                    'modifiedTime': file.get('modifiedTime', ''),
+                    'context': context,
+                    'confidence': int(file.get('match_score', 0) * 100),
+                    'match_score': round(file.get('match_score', 0), 4),
+                    'match_type': 'keyword',
+                    'drive_url': f"https://drive.google.com/file/d/{file.get('id', '')}/view"
+                })
+            
+            print(f"Keyword search completed. Found {len(formatted_results)} matching files")
+            
+            return {
+                'query': req.query,
+                'total_searched': len(files),
+                'matches_found': len(formatted_results),
+                'files': formatted_results,
+                'search_type': 'keyword',
+                'search_params': {
+                    'top_k': req.top_k
+                }
+            }
         
-        print(f"Search completed. Found {len(matching_files)} matching files")
-        
+        # If we get here, no results were found
         return {
             'query': req.query,
             'total_searched': len(files),
-            'matches_found': len(matching_files),
-            'files': matching_files
+            'matches_found': 0,
+            'files': [],
+            'search_type': 'semantic' if req.use_semantic else 'keyword',
+            'message': 'No matching documents found.'
         }
         
     except Exception as e:
