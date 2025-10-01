@@ -20,6 +20,70 @@ from tqdm import tqdm
 from services.parser.query_expander import QueryExpander, query_expander
 from services.parser.search_cache import EmbeddingCache, ChunkCache
 
+def smart_chunks(
+    text: str, 
+    max_words: int = 5, 
+    min_length: int = 1,
+    **kwargs
+) -> List[str]:
+    """
+    Extract meaningful chunks from text using spaCy's noun chunks.
+    Falls back to simple chunking if spaCy fails or no noun chunks are found.
+    
+    Args:
+        text: Input text to extract chunks from
+        max_words: Maximum number of words in a chunk (default: 5)
+        min_length: Minimum number of words in a chunk (default: 1)
+        **kwargs: Additional keyword arguments (ignored, for compatibility)
+        
+    Returns:
+        List of extracted chunks, or [text] if no valid chunks found
+    """
+    # Input validation
+    if not text or not isinstance(text, str) or not text.strip():
+        return [text] if text else []
+        
+    # Ensure min_length is at least 1 and max_words is sensible
+    min_length = max(1, int(min_length))
+    max_words = max(min_length, min(20, int(max_words)))  # Cap at 20 words
+    
+    try:
+        # Process text with spaCy
+        doc = nlp(text)
+        chunks = []
+        seen_chunks = set()  # For deduplication
+        
+        # Extract noun chunks and filter by length
+        for chunk in doc.noun_chunks:
+            words = [t.text for t in chunk if not t.is_punct and not t.is_space]
+            if min_length <= len(words) <= max_words:
+                chunk_text = ' '.join(words)
+                if chunk_text and chunk_text not in seen_chunks:
+                    chunks.append(chunk_text)
+                    seen_chunks.add(chunk_text)
+        
+        # Fallback to simple chunking if no noun chunks found
+        if not chunks:
+            words = [t.text for t in doc if not t.is_punct and not t.is_space]
+            if words:
+                chunks = [' '.join(words[i:i + max_words]) 
+                         for i in range(0, len(words), max_words)]
+        
+        return chunks if chunks else [text]
+    
+    except Exception as e:
+        # Log a cleaner error message if it's a spaCy-specific error
+        error_msg = str(e)
+        if 'E029' in error_msg or 'noun_chunks' in error_msg:
+            logger.debug("spaCy model not properly loaded for noun chunks. Using simple chunking.")
+        else:
+            logger.warning(f"Error in smart_chunks: {error_msg[:200]}")
+        
+        # Fallback to simple whitespace-based chunking
+        words = text.split()
+        return [' '.join(words[i:i + max_words]) 
+                for i in range(0, len(words), max_words)]
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,12 +111,16 @@ except Exception as e:
     logger.error(f"Failed to initialize model: {str(e)}")
     raise
 
-# Load spaCy for better text processing
-def load_spacy_model():
-    """Load spaCy model with proper error handling and download if needed."""
+def load_spacy_model(disable=None):
+    """
+    Load spaCy model with proper error handling and download if needed.
+    
+    Args:
+        disable: List of pipeline components to disable (default: None, loads all components)
+    """
     try:
-        # First try loading the model normally
-        nlp = spacy.load("en_core_web_sm", disable=["parser", "ner"])
+        # First try loading the model with all components
+        nlp = spacy.load("en_core_web_sm", disable=disable or [])
         logger.info("Successfully loaded spaCy model")
         return nlp
     except OSError:
@@ -60,19 +128,22 @@ def load_spacy_model():
             logger.info("Downloading spaCy model 'en_core_web_sm'...")
             import subprocess
             import sys
-            # Use subprocess to ensure the model is properly installed in the environment
             subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
-            nlp = spacy.load("en_core_web_sm", disable=["parser", "ner"])
+            nlp = spacy.load("en_core_web_sm", disable=disable or [])
             logger.info("Successfully downloaded and loaded spaCy model")
             return nlp
         except Exception as e:
             logger.error(f"Failed to download or load spaCy model: {str(e)}")
             return None
 
-# Initialize spaCy model
+# Initialize spaCy model with all components for noun chunking
 nlp = load_spacy_model()
 if nlp is None:
     logger.warning("Falling back to simple tokenization. Some features may be limited.")
+    # Create a minimal fallback tokenizer if spaCy fails to load
+    nlp = spacy.blank("en")
+    nlp.add_pipe("sentencizer")
+    logger.info("Initialized minimal spaCy tokenizer as fallback")
 
 class SearchOperator(Enum):
     OR = "or"
@@ -440,9 +511,16 @@ def semantic_search(
     from search_utils import parse_search_query, filter_by_file_type, filter_negations
     
     # Get query text and generate embeddings
-    query_text = query_intent.text
+    if isinstance(query, str):
+        query_intent = QueryIntent(query)
+    else:
+        query_intent = query
+        
+    query_text = query_intent.text if hasattr(query_intent, 'text') else str(query)
+    synonyms = query_intent.get_synonyms() if hasattr(query_intent, 'get_synothers') else []
+    
     query_embeddings = model.encode(
-        [query_text] + query_intent.get_synonyms(),
+        [query_text] + synonyms,
         convert_to_tensor=True,
         show_progress_bar=False
     )
@@ -459,10 +537,11 @@ def semantic_search(
             for doc in batch_docs:
                 # Get or generate chunks
                 doc_text = doc.get('text', '')
+                # Use the smart_chunks function with fallback to simple chunking
                 chunks = ChunkCache.get_chunks(
-                    doc_text, 
-                    smart_chunks,  # Your existing chunking function
-                    max_words=chunk_size * 100,  # Adjust based on your needs
+                    doc_text,
+                    smart_chunks,  # Will use our fallback if not defined
+                    max_words=chunk_size * 100,
                     stride=overlap * 50
                 )
                 
@@ -490,14 +569,18 @@ def semantic_search(
         'scores': r['scores']
     } for r in results[:top_k]]
     
-    # Ensure query_intent has required attributes with fallbacks
-    query_text = getattr(query_intent, 'text', str(query))
+    # Ensure query_intent is properly initialized
+    if not hasattr(query_intent, 'text'):
+        query_intent = QueryIntent(str(query))
+        
+    # Get attributes with fallbacks
+    query_text = query_intent.text
     key_phrases = getattr(query_intent, 'key_phrases', [])
     file_types = getattr(query_intent, 'file_types', [])
     negation_terms = getattr(query_intent, 'negation_terms', [])
     
     # Apply file type filtering if requested and file types are specified
-    if apply_filters and file_types:
+    if apply_filters and file_types and hasattr(query_intent, 'file_types'):
         from search_utils import filter_by_file_type
         documents = filter_by_file_type(documents, file_types)
         if not documents:
@@ -514,7 +597,7 @@ def semantic_search(
         return []
     
     # Check if we have topics to search for
-    if not query_intent.topics and not query_intent.key_phrases:
+    if not getattr(query_intent, 'topics', []) and not getattr(query_intent, 'key_phrases', []):
         logger.warning("No searchable topics or key phrases found in query")
         return []
     
