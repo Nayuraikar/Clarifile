@@ -84,3 +84,6 @@ __pypackages__/
 # FastAPI auto-generated OpenAPI docs
 openapi.json
 gemini_keys.txt
+
+# Ignore semantic search cache
+services/.search_cache/
