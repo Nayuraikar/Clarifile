@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { assistantGenerate, downloadFromResponse } from '../assistantApi';
 import { Search, X, FileText, Image as ImageIcon, Music, Film, FileSpreadsheet, FilePresentation, Code, Archive, Mail, BookOpen, Loader2, Sparkles } from 'lucide-react';
 
 interface SearchResult {
@@ -35,6 +36,12 @@ const SearchComponent: React.FC = () => {
   const [isVisualSearch, setIsVisualSearch] = useState(false);
   const [visualSearchPreview, setVisualSearchPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Assistant Generator state
+  const [assistantKind, setAssistantKind] = useState<'flowchart' | 'short_notes' | 'detailed_notes' | 'timeline' | 'key_insights' | 'flashcards'>('flowchart');
+  const [assistantOutput, setAssistantOutput] = useState<any>(null);
+  const [assistantError, setAssistantError] = useState<string>('');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // File type options with icons
   const fileTypes = [
@@ -179,6 +186,30 @@ const SearchComponent: React.FC = () => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
+  };
+
+  // Assistant generate handler (text-only quick path)
+  const handleAssistantGenerate = async (fmt: 'md' | 'txt' | 'docx' | 'pdf' = 'md') => {
+    const text = query?.trim();
+    if (!text) {
+      setAssistantError('Enter some text first (e.g., paste content or a brief).');
+      return;
+    }
+    setAssistantError('');
+    setIsGenerating(true);
+    try {
+      const resp = await assistantGenerate({ kind: assistantKind, text, format: fmt });
+      setAssistantOutput(resp);
+    } catch (e: any) {
+      setAssistantError(e?.message || 'Generation failed');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleAssistantDownload = () => {
+    if (!assistantOutput) return;
+    downloadFromResponse(assistantOutput);
   };
 
   // Handle file upload for visual search
@@ -550,6 +581,58 @@ const SearchComponent: React.FC = () => {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Assistant Generator */}
+      <div className="mt-10 bg-white rounded-xl shadow-sm border border-[#e6dfd4] p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-[#8b7355]">Assistant Generator</h2>
+          <div className="flex gap-2 items-center">
+            <select
+              value={assistantKind}
+              onChange={(e) => setAssistantKind(e.target.value as any)}
+              className="border rounded-md px-2 py-1 text-sm"
+            >
+              <option value="flowchart">Flowchart (Mermaid)</option>
+              <option value="short_notes">Short Notes</option>
+              <option value="detailed_notes">Detailed Notes</option>
+              <option value="timeline">Timeline</option>
+              <option value="key_insights">Key Insights</option>
+              <option value="flashcards">Q&A Flashcards</option>
+            </select>
+            <button
+              type="button"
+              disabled={isGenerating}
+              onClick={() => handleAssistantGenerate('md')}
+              className={`px-3 py-2 rounded-md text-white ${isGenerating ? 'bg-gray-300' : 'bg-[#8b7355] hover:bg-[#6b5a45]'}`}
+            >
+              {isGenerating ? 'Generating...' : 'Generate'}
+            </button>
+            {assistantOutput && (
+              <button
+                type="button"
+                onClick={handleAssistantDownload}
+                className="px-3 py-2 rounded-md border text-[#8b7355] hover:bg-gray-50"
+              >
+                Download
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">Tip: Paste or type content into the main search input above to generate outputs without uploading a file.</p>
+        {assistantError && <div className="text-sm text-red-600 mb-2">{assistantError}</div>}
+        {assistantOutput && assistantOutput.kind === 'flowchart' && (
+          <div className="bg-gray-50 rounded-md p-3 overflow-auto">
+            <pre className="text-xs whitespace-pre-wrap">```mermaid
+{assistantOutput.content}
+```</pre>
+          </div>
+        )}
+        {assistantOutput && assistantOutput.kind !== 'flowchart' && (
+          <div className="bg-gray-50 rounded-md p-3 overflow-auto">
+            <pre className="text-xs whitespace-pre-wrap">{typeof assistantOutput.content === 'string' ? assistantOutput.content : JSON.stringify(assistantOutput.content, null, 2)}</pre>
           </div>
         )}
       </div>

@@ -25,6 +25,7 @@ from services.categorizer_fallback import categorize_with_fallback
 from semantic_search import hybrid_search, semantic_search, clean_query
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
+from services.assistant_generator import generate, export_bytes
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # --- Paths & constants ---
@@ -60,6 +61,18 @@ class DriveAnalyzeRequest(BaseModel):
     # Accept any file shape to avoid validation 422s
     file: dict
     q: str | None = None
+    auth_token: str | None = None
+
+    class Config:
+        extra = 'allow'
+
+
+class AssistantGenerateRequest(BaseModel):
+    # kind: flowchart | short_notes | detailed_notes | timeline | key_insights | flashcards
+    kind: str
+    text: str | None = None  # direct text; if absent, use file content
+    file: dict | None = None
+    format: str | None = None  # pdf | docx | txt | md
     auth_token: str | None = None
 
     class Config:
@@ -312,6 +325,54 @@ def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)
         except Exception:
             pass
 
+
+@app.post("/assistant_generate")
+def assistant_generate(req: AssistantGenerateRequest):
+    """Generate study outputs and optionally return a downloadable payload.
+    If file is provided, extract text via existing extractors. Otherwise use provided text.
+    """
+    token = req.auth_token
+    text = (req.text or "").strip()
+    if not text and req.file:
+        file = req.file
+        file_id = file.get('id')
+        path = drive_download_file(token, file_id, tempfile.gettempdir())
+        if not path:
+            raise HTTPException(status_code=400, detail="Failed to download file from Drive")
+        try:
+            ext = os.path.splitext((file.get('name') or path))[1].lower()
+            if ext == ".txt":
+                text = read_text_file(path)
+            elif ext == ".pdf":
+                text = extract_text_from_pdf(path)
+            elif ext in {".png", ".jpg", ".jpeg"}:
+                text = extract_text_from_image(path)
+            elif ext in {".mp3", ".wav"}:
+                transcript = transcribe_audio(path)
+                text = transcript
+            else:
+                text = read_text_file(path)
+        finally:
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided or extractable from file")
+
+    kind, content = generate(req.kind, text)
+    filename, b64 = export_bytes(kind, content, req.format or "md")
+    mime = {
+        'md': 'text/markdown',
+        'markdown': 'text/markdown',
+        'txt': 'text/plain',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'pdf': 'application/pdf'
+    }.get((req.format or 'md').lower(), 'application/octet-stream')
+    # Also return raw content for inline preview
+    return {"kind": kind, "filename": filename, "base64": b64, "mime": mime, "content": content}
+
 # Allow requests from your frontend origin
 # For development, allow all origins to support Chrome extension and local UI.
 # In production, replace with explicit origins including your extension ID.
@@ -433,12 +494,23 @@ def init_db():
         FOREIGN KEY(b) REFERENCES entities(id)
       )
     """)
+
+    # Create proposals table for Drive file categorization
+    cur.execute("""
+      CREATE TABLE IF NOT EXISTS proposals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id TEXT UNIQUE,
+        file_name TEXT,
+        proposed_label TEXT,
+        final_label TEXT,
+        approved INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    """)
+
     conn.commit()
     return conn
-
-# Global database connection - will be initialized at startup
-conn = None
-
 @app.on_event("startup")
 async def startup_event():
     """Initialize database connection on startup."""
@@ -3800,6 +3872,125 @@ def analyze_image_content(image_path):
         print(f"Image analysis error: {e}")
         # Fallback to basic terms
         return ["image", "photo", "picture", "document", "content"]
+
+class UpdateCategoryRequest(BaseModel):
+    file_id: str
+    new_category: str
+    auth_token: Optional[str] = None
+
+@app.post("/update_category")
+def update_category(req: UpdateCategoryRequest):
+    """Update the category for a Google Drive file"""
+    try:
+        print(f"UPDATE_CATEGORY called for file {req.file_id} -> {req.new_category}")
+        
+        # Get Drive service
+        drive_service = get_drive_service(req.auth_token)
+        
+        # Update the file's category in our database
+        cur = conn.cursor()
+        
+        # First check if file exists in our proposals table
+        cur.execute("SELECT id, file_name FROM proposals WHERE file_id = ?", (req.file_id,))
+        existing = cur.fetchone()
+        
+        if existing:
+            # Update existing record - DON'T auto-approve, just update category
+            cur.execute("""
+                UPDATE proposals 
+                SET proposed_label = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE file_id = ?
+            """, (req.new_category, req.file_id))
+            print(f"Updated existing record for {req.file_id}")
+        else:
+            # Get file info from Drive
+            try:
+                file_info = drive_service.files().get(fileId=req.file_id).execute()
+                file_name = file_info.get('name', 'Unknown')
+                
+                # Insert new record - DON'T auto-approve, just set proposed category
+                cur.execute("""
+                    INSERT INTO proposals (file_id, file_name, proposed_label, approved)
+                    VALUES (?, ?, ?, 0)
+                """, (req.file_id, file_name, req.new_category))
+                print(f"Created new record for {req.file_id}")
+            except Exception as e:
+                print(f"Failed to get file info from Drive: {e}")
+                # Insert with unknown name - DON'T auto-approve
+                cur.execute("""
+                    INSERT INTO proposals (file_id, file_name, proposed_label, approved)
+                    VALUES (?, ?, ?, 0)
+                """, (req.file_id, "Unknown", req.new_category))
+        
+        conn.commit()
+        
+        return {
+            "success": True,
+            "file_id": req.file_id,
+            "new_category": req.new_category,
+            "message": "Category updated successfully"
+        }
+        
+    except Exception as e:
+        print(f"Error updating category: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update category: {str(e)}")
+
+@app.get("/proposals")
+def get_proposals():
+    """Get all proposals from database with updated categories"""
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT file_id, file_name, proposed_label, final_label, approved, created_at, updated_at
+            FROM proposals 
+            ORDER BY updated_at DESC
+        """)
+        rows = cur.fetchall()
+        
+        proposals = []
+        for row in rows:
+            file_id, file_name, proposed_label, final_label, approved, created_at, updated_at = row
+            
+            # Use final_label if approved, otherwise proposed_label
+            category = final_label if approved and final_label else (proposed_label or "Uncategorized")
+            
+            proposals.append({
+                "id": file_id,
+                "name": file_name or "Unknown",
+                "proposed_category": category,
+                "final_category": final_label,
+                "approved": bool(approved),
+                "created_at": created_at,
+                "updated_at": updated_at
+            })
+        
+        print(f"Returning {len(proposals)} proposals from database")
+        return proposals
+        
+    except Exception as e:
+        print(f"Error fetching proposals: {e}")
+        return []
+
+@app.delete("/proposals")
+def clear_proposals():
+    """Clear all proposals from database to start fresh"""
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM proposals")
+        conn.commit()
+        
+        deleted_count = cur.rowcount
+        print(f"Cleared {deleted_count} proposals from database")
+        
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "message": "All proposals cleared successfully"
+        }
+        
+    except Exception as e:
+        print(f"Error clearing proposals: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear proposals: {str(e)}")
 
 @app.get("/favicon.ico")
 def favicon():

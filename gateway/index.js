@@ -110,6 +110,16 @@ app.post('/embed', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
+// Assistant generate passthrough to parser
+app.post('/api/assistant_generate', async (req, res) => {
+  try {
+    const r = await axios.post(`${PARSER}/assistant_generate`, req.body, { timeout: 120000 });
+    res.json(r.data);
+  } catch (e) {
+    res.status(500).json({ error: e.toString() });
+  }
+});
+
 // ====== ENHANCED CATEGORIZATION ENDPOINTS ======
 
 // Categorize content using enhanced system
@@ -262,6 +272,16 @@ app.post('/drive/organize', async (req, res) => {
   try {
     console.log('[drive/organize] received', Array.isArray(req.body?.files) ? req.body.files.length : 0, 'files');
     DRIVE_TOKEN = req.body?.auth_token || DRIVE_TOKEN;
+    
+    // Clear old proposals from database to start fresh
+    try {
+      console.log('[drive/organize] Clearing old proposals from database...');
+      await axios.delete(`${PARSER}/proposals`);
+      console.log('[drive/organize] Old proposals cleared successfully');
+    } catch (clearError) {
+      console.log('[drive/organize] Failed to clear old proposals:', clearError.message);
+    }
+    
     const r = await axios.post(`${PARSER}/organize_drive_files`, req.body);
     const data = r.data || {};
     DRIVE_PROPOSALS = data.organized_files || [];
@@ -273,7 +293,46 @@ app.post('/drive/organize', async (req, res) => {
 });
 
 app.get('/drive/proposals', async (req, res) => {
-  try { res.json(DRIVE_PROPOSALS); } catch (e) { res.status(500).json({ error: e.toString() }); }
+  try { 
+    // Get updated categories from database
+    let dbUpdates = {};
+    try {
+      const r = await axios.get(`${PARSER}/proposals`);
+      const dbProposals = r.data || [];
+      
+      // Create a map of file_id -> updated_category from database
+      for (const proposal of dbProposals) {
+        dbUpdates[proposal.id] = {
+          proposed_category: proposal.proposed_category,
+          approved: proposal.approved
+        };
+      }
+    } catch (e) {
+      console.log('Failed to fetch database updates:', e.message);
+    }
+    
+    // Apply database updates to the original DRIVE_PROPOSALS (from organize)
+    const updatedProposals = (DRIVE_PROPOSALS || []).map(file => {
+      if (dbUpdates[file.id]) {
+        // File has been analyzed - use updated category from database
+        return {
+          ...file,
+          proposed_category: dbUpdates[file.id].proposed_category,
+          approved: dbUpdates[file.id].approved
+        };
+      }
+      // File hasn't been analyzed - keep original category and ensure not approved
+      return {
+        ...file,
+        approved: false  // Ensure non-analyzed files are not marked as approved
+      };
+    });
+    
+    res.json(updatedProposals);
+  } catch (e) { 
+    console.log('Error in drive/proposals:', e.message);
+    res.json(DRIVE_PROPOSALS || []); 
+  }
 });
 
 // Drive categories (mirror categories with Drive-specific counts)
@@ -281,9 +340,40 @@ app.get('/drive/categories', async (req, res) => {
   try {
     if (!DRIVE_TOKEN) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
 
-    // 1) Build counts from current proposals by proposed_category
+    // 1) Get updated proposals (same logic as /drive/proposals endpoint)
+    let dbUpdates = {};
+    try {
+      const r = await axios.get(`${PARSER}/proposals`);
+      const dbProposals = r.data || [];
+      
+      // Create a map of file_id -> updated_category from database
+      for (const proposal of dbProposals) {
+        dbUpdates[proposal.id] = {
+          proposed_category: proposal.proposed_category,
+          approved: proposal.approved
+        };
+      }
+    } catch (e) {
+      console.log('Failed to fetch database updates for categories:', e.message);
+    }
+    
+    // Apply database updates to the original DRIVE_PROPOSALS
+    const updatedProposals = (DRIVE_PROPOSALS || []).map(file => {
+      if (dbUpdates[file.id]) {
+        return {
+          ...file,
+          proposed_category: dbUpdates[file.id].proposed_category,
+          approved: dbUpdates[file.id].approved
+        };
+      }
+      return {
+        ...file,
+        approved: false  // Ensure non-analyzed files are not marked as approved
+      };
+    });
+
     const proposalCounts = {};
-    for (const f of (DRIVE_PROPOSALS || [])) {
+    for (const f of updatedProposals) {
       const k = f.proposed_category || 'Other';
       proposalCounts[k] = (proposalCounts[k] || 0) + 1;
     }
@@ -527,6 +617,125 @@ app.post('/drive/analyze', async (req, res) => {
     if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
     const body = { ...req.body, auth_token: req.body?.auth_token || DRIVE_TOKEN };
     const r = await axios.post(`${PARSER}/drive_analyze`, body);
+    
+    // Check if this is a document generation request
+    if (req.body?.q && r.data) {
+      const query = req.body.q.toLowerCase().trim();
+      const generationPatterns = {
+        "flowchart": ["flowchart", "flow chart", "flowchrt", "flwchart", "diagram", "diagramm", "mermaid", "process flow", "create flowchart", "make flowchart", "generate flowchart", "crete flowchart", "mke flowchart"],
+        "short_notes": ["short notes", "bullet points", "summary notes", "brief notes", "quick notes", "create notes", "make notes", "sumary notes", "breif notes", "quik notes", "crete notes", "mke notes", "bullet point", "bulet points"],
+        "detailed_notes": ["detailed notes", "revision notes", "study notes", "comprehensive notes", "full notes", "create revision", "make revision", "detaild notes", "revison notes", "studie notes", "crete revision", "mke revision", "revision note", "revison note"],
+        "timeline": ["timeline", "chronological", "sequence", "steps", "process timeline", "create timeline", "make timeline", "timline", "chronologicl", "sequance", "step", "proces timeline", "crete timeline", "mke timeline"],
+        "key_insights": ["key insights", "insights", "takeaways", "main points", "important points", "create insights", "extract insights", "kye insights", "insites", "takeaway", "main point", "importnt points", "crete insights", "extrac insights"],
+        "flashcards": ["flashcards", "flash cards", "quiz", "q&a", "questions and answers", "qna", "create flashcards", "make flashcards", "flashcard", "flash card", "quizz", "q and a", "question and answer", "crete flashcards", "mke flashcards"]
+      };
+      
+      const formatPatterns = {
+        "pdf": ["pdf", "downloadable pdf", "download pdf", "as pdf", "in pdf"],
+        "docx": ["docx", "word", "doc", "downloadable docx", "download docx", "as docx", "in docx", "as word"],
+        "txt": ["txt", "text file", "downloadable txt", "download txt", "downloadable format", "download", "as txt", "in txt"],
+        "png": ["png", "image", "img", "picture", "as image", "as png", "downloadable image", "download image"]
+      };
+      
+      let detectedKind = null;
+      let detectedFormat = null;
+      
+      // Detect document type
+      for (const [kind, patterns] of Object.entries(generationPatterns)) {
+        if (patterns.some(pattern => query.includes(pattern))) {
+          detectedKind = kind;
+          break;
+        }
+      }
+      
+      // Detect format
+      for (const [fmt, patterns] of Object.entries(formatPatterns)) {
+        if (patterns.some(pattern => query.includes(pattern))) {
+          detectedFormat = fmt;
+          break;
+        }
+      }
+      
+      if (detectedKind) {
+        try {
+          // Call the assistant generator
+          const assistantBody = {
+            kind: detectedKind,
+            file: req.body.file,
+            format: detectedFormat || 'txt',
+            auth_token: body.auth_token
+          };
+          
+          const assistantResponse = await axios.post(`${PARSER}/assistant_generate`, assistantBody);
+          
+          if (assistantResponse.data) {
+            // Enhance the response with assistant data
+            r.data.assistant = {
+              type: detectedFormat ? 'download' : 'display',
+              kind: assistantResponse.data.kind,
+              filename: assistantResponse.data.filename,
+              base64: assistantResponse.data.base64,
+              mime: assistantResponse.data.mime,
+              content: assistantResponse.data.content
+            };
+            
+            // Update the answer
+            if (detectedFormat) {
+              r.data.qa = r.data.qa || {};
+              r.data.qa.answer = `I've generated your ${detectedKind.replace('_', ' ')} as a downloadable ${detectedFormat.toUpperCase()} file.`;
+            } else {
+              // Format content for display
+              let formattedContent = assistantResponse.data.content;
+              if (detectedKind === 'flashcards') {
+                formattedContent = assistantResponse.data.content.map((card, i) => 
+                  `**Q${i+1}:** ${card[0]}\n**A${i+1}:** ${card[1]}`
+                ).join('\n\n');
+              } else if (detectedKind === 'flowchart') {
+                formattedContent = `\`\`\`mermaid\n${assistantResponse.data.content}\n\`\`\``;
+              }
+              
+              r.data.qa = r.data.qa || {};
+              r.data.qa.answer = formattedContent;
+            }
+          }
+        } catch (assistantError) {
+          console.error('Assistant generation error:', assistantError);
+          r.data.qa = r.data.qa || {};
+          r.data.qa.answer = `I encountered an error generating the ${detectedKind.replace('_', ' ')}: ${assistantError.message}`;
+        }
+      }
+    }
+    
+    // Check if analysis resulted in a new category and auto-update
+    if (r.data && req.body?.file?.id) {
+      const currentCategory = r.data.category;
+      const fileId = req.body.file.id;
+      
+      // If we have a new category from analysis, automatically update it
+      if (currentCategory && currentCategory !== 'Unknown') {
+        try {
+          console.log(`AUTO-UPDATING category for file ${fileId} to: ${currentCategory}`);
+          
+          // Call the update category endpoint internally
+          await axios.post(`${PARSER}/update_category`, {
+            file_id: fileId,
+            new_category: currentCategory,
+            auth_token: req.body.auth_token || DRIVE_TOKEN
+          });
+          
+          console.log(`Successfully auto-updated category for ${fileId} to ${currentCategory}`);
+          
+          // Mark in response that category was auto-updated
+          r.data.category_auto_updated = true;
+          
+        } catch (updateError) {
+          console.error('Failed to auto-update category:', updateError.response?.data || updateError.message);
+          // Don't fail the whole request if category update fails
+          r.data.category_update_failed = true;
+        }
+      }
+    }
+    
     res.json(r.data);
   } catch (e) { res.status(500).json({ error: e.toString() }); }
 });
@@ -617,6 +826,33 @@ app.get('/file_summary', async (req, res) => {
 app.get('/ask', async (req, res) => {
   try { const r = await axios.get(`${PARSER}/ask`, { params: req.query }); res.json(r.data); }
   catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Update category for a file
+app.post('/drive/update_category', async (req, res) => {
+  try {
+    console.log('UPDATE_CATEGORY ENDPOINT CALLED!');
+    console.log('Request body:', req.body);
+    
+    const { fileId, newCategory } = req.body;
+    
+    if (!fileId || !newCategory) {
+      return res.status(400).json({ error: 'fileId and newCategory are required' });
+    }
+    
+    // Forward to parser service to update the category
+    const r = await axios.post(`${PARSER}/update_category`, {
+      file_id: fileId,
+      new_category: newCategory,
+      auth_token: req.body.auth_token || DRIVE_TOKEN
+    });
+    
+    console.log('Category update response:', r.data);
+    res.json(r.data);
+  } catch (e) {
+    console.error('Update category error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.detail || e.toString() });
+  }
 });
 
 // ====== SERVE UI ======

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useEffect, useMemo, useState } from 'react'
 import DuplicateResolution from './DuplicateResolution'
 
 const BASE = 'http://127.0.0.1:4000'
@@ -98,9 +98,47 @@ export default function App() {
   const [driveAnalyzedId, setDriveAnalyzedId] = useState<string>('')
   const [customLabels, setCustomLabels] = useState<Record<string, string>>({})
   const [analyzingFile, setAnalyzingFile] = useState<string | null>(null)
+
+  // Helper function to download files
+  const downloadFile = (filename: string, base64Data: string, mimeType: string) => {
+    try {
+      const byteCharacters = atob(base64Data)
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+      const blob = new Blob([byteArray], { type: mimeType })
+      
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Download failed:', error)
+      setNotification('Download failed. Please try again.')
+    }
+  }
+
+  // Helper function to send study requests
+  const sendStudyRequest = (request: string) => {
+    if (!selectedChatId) {
+      setNotification('Please select a chat first')
+      return
+    }
+    setAskInput(request)
+    // Trigger the send message function
+    setTimeout(() => {
+      sendMsg()
+    }, 100)
+  }
   const [notification, setNotification] = useState<string | null>(null)
-  const [messages, setMessages] = useState<{ role: 'user'|'assistant', content: string }[]>([])
-  const [chats, setChats] = useState<Record<string, { file: DriveProposal, messages: { role: 'user'|'assistant', content: string }[] }>>({})
+  const [messages, setMessages] = useState<{ role: 'user'|'assistant', content: string, assistant?: any }[]>([])
+  const [chats, setChats] = useState<Record<string, { file: DriveProposal, messages: { role: 'user'|'assistant', content: string, assistant?: any }[] }>>({})
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
   const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean}>({})
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null)
@@ -150,22 +188,19 @@ export default function App() {
         } 
       };
     });
-    setSelectedChatId(file.id);
     setDriveAnalyzedId(file.id);
     return file.id;
   }
 
   // Append a message to a specific chat
-  const appendToChat = (chatId: string, message: { role: 'user'|'assistant', content: string }) => {
+  const appendToChat = (chatId: string, message: { role: 'user'|'assistant', content: string, assistant?: any }) => {
     setChats(prev => {
       const chat = prev[chatId];
       if (!chat) return prev;
-      
       const updatedChat = {
         ...chat,
         messages: [...chat.messages, message]
       };
-      
       // If this is a new message from the assistant, make sure the chat is selected
       if (message.role === 'assistant') {
         setSelectedChatId(chatId);
@@ -379,15 +414,15 @@ export default function App() {
     
     // Add typing indicator into chat
     appendToChat(selectedChatId, { role: 'assistant', content: '::typing::' })
-    const replaceTypingWith = (text: string) => {
+    const replaceTypingWith = (text: string, assistantData?: any) => {
       setChats(prev => {
         const chat = prev[selectedChatId!]
         if (!chat) return prev
         const msgs = [...chat.messages]
         if (msgs.length && msgs[msgs.length - 1].content === '::typing::' && msgs[msgs.length - 1].role === 'assistant') {
-          msgs[msgs.length - 1] = { role: 'assistant', content: text }
+          msgs[msgs.length - 1] = { role: 'assistant', content: text, assistant: assistantData }
         } else {
-          msgs.push({ role: 'assistant', content: text })
+          msgs.push({ role: 'assistant', content: text, assistant: assistantData })
         }
         return { ...prev, [selectedChatId!]: { ...chat, messages: msgs } }
       })
@@ -414,8 +449,17 @@ export default function App() {
         return
       }
       const ans = response?.qa?.answer || response?.summary || 'No answer available'
-      replaceTypingWith(ans)
-      setAskResult(response?.qa || { answer: ans })
+      
+      // Check if this is an assistant generation response
+      if (response?.assistant) {
+        const assistant = response.assistant
+        // Pass assistant data to the message
+        replaceTypingWith(ans, assistant)
+        setAskResult({ answer: ans, assistant: assistant })
+      } else {
+        replaceTypingWith(ans)
+        setAskResult(response?.qa || { answer: ans })
+      }
       
     } catch (e:any) {
       console.error('Chatbot error:', e)
@@ -659,7 +703,7 @@ export default function App() {
             const isDemo = file.id.startsWith('demo-file-')
             ensureChatForFile(file)
             if (isDemo) {
-              const demoContent = `**Summary Feature Demo**\n\n• **Feature:** Document Summarization\n• **Purpose:** Analyzes document content and provides key insights\n• **Usage:** Select a real document to get actual summary\n• **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+              const demoContent = `**Summary Feature Demo**\n\nâ€¢ **Feature:** Document Summarization\nâ€¢ **Purpose:** Analyzes document content and provides key insights\nâ€¢ **Usage:** Select a real document to get actual summary\nâ€¢ **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
               appendToChat(file.id, { role: 'assistant', content: demoContent })
               setQuickActionLoading(false)
               setNotification('Summary demo shown')
@@ -702,7 +746,7 @@ export default function App() {
           // Group files by same proposed category (similar to Files tab logic)
           const isDemoSimilar = file.id.startsWith('demo-file-')
           if (isDemoSimilar) {
-            messageContent = `**Find Similar Files Demo**\n\n• **Feature:** Similarity Search\n• **Purpose:** Groups files by category and content similarity\n• **Usage:** Upload files to find actual similar documents\n• **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+            messageContent = `**Find Similar Files Demo**\n\nâ€¢ **Feature:** Similarity Search\nâ€¢ **Purpose:** Groups files by category and content similarity\nâ€¢ **Usage:** Upload files to find actual similar documents\nâ€¢ **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
           } else {
             const similarFiles = driveProps.filter(f => 
               f.id !== file.id && 
@@ -718,9 +762,9 @@ export default function App() {
           // Show basic file information (what Summary used to show)
           const isDemoInsights = file.id.startsWith('demo-file-')
           if (isDemoInsights) {
-            messageContent = `**Extract Insights Demo**\n\n• **Feature:** Document Analysis & Insights\n• **Purpose:** Extracts key information and patterns from documents\n• **Usage:** Upload files to get actual insights\n• **Status:** Ready to analyze your documents\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+            messageContent = `**Extract Insights Demo**\n\nâ€¢ **Feature:** Document Analysis & Insights\nâ€¢ **Purpose:** Extracts key information and patterns from documents\nâ€¢ **Usage:** Upload files to get actual insights\nâ€¢ **Status:** Ready to analyze your documents\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
           } else {
-            messageContent = `**File Insights for "${file.name}"**\n\n• **File Name:** ${file.name}\n• **Proposed Category:** ${file.proposed_category}\n• **Type:** Document file\n• **Status:** Available for organization\n\nThis file has been analyzed and categorized. You can approve its organization in the Files tab.`
+            messageContent = `**File Insights for "${file.name}"**\n\nâ€¢ **File Name:** ${file.name}\nâ€¢ **Proposed Category:** ${file.proposed_category}\nâ€¢ **Type:** Document file\nâ€¢ **Status:** Available for organization\n\nThis file has been analyzed and categorized. You can approve its organization in the Files tab.`
           }
           break
           
@@ -728,10 +772,10 @@ export default function App() {
           // Redirect to Files tab for organization
           const isDemoOrganize = file.id.startsWith('demo-file-')
           if (isDemoOrganize) {
-            messageContent = `**Organize Files Demo**\n\n• **Feature:** File Organization\n• **Purpose:** Automatically categorizes and organizes documents\n• **Usage:** Upload files to organize them into folders\n• **Status:** Ready to organize your documents\n\n**To use with real files:** Upload documents via the Chrome extension, then use the Files tab to approve organization.`
+            messageContent = `**Organize Files Demo**\n\nâ€¢ **Feature:** File Organization\nâ€¢ **Purpose:** Automatically categorizes and organizes documents\nâ€¢ **Usage:** Upload files to organize them into folders\nâ€¢ **Status:** Ready to organize your documents\n\n**To use with real files:** Upload documents via the Chrome extension, then use the Files tab to approve organization.`
           } else {
             setTab('drive')
-            messageContent = `**Organization for "${file.name}"**\n\n• **Target Category:** ${file.proposed_category}\n• **Action Required:** Please go to the Files tab to approve this file's organization\n• **Status:** Redirected to Files tab\n\nYou can now find this file in the Files tab and click "Approve" to organize it properly.`
+            messageContent = `**Organization for "${file.name}"**\n\nâ€¢ **Target Category:** ${file.proposed_category}\nâ€¢ **Action Required:** Please go to the Files tab to approve this file's organization\nâ€¢ **Status:** Redirected to Files tab\n\nYou can now find this file in the Files tab and click "Approve" to organize it properly.`
           }
           break
           
@@ -796,7 +840,7 @@ export default function App() {
               className="notification-close"
               title="Close notification"
             >
-              ×
+              Ã—
             </button>
           </div>
         </div>
@@ -1290,7 +1334,14 @@ export default function App() {
                                 console.log('Backend response:', response);
                                 console.log('Set drive analyzed ID to:', file.id);
                                 setDriveAnalyzedId(file.id);
-                                setNotification('File analyzed successfully!');
+                                // Check if category was auto-updated and refresh
+                                if (response.category_auto_updated) {
+                                  console.log('Category was auto-updated, refreshing drive files...');
+                                  refreshDrive(); // Refresh to show updated category
+                                  setNotification(`File analyzed and category updated to: ${response.category || 'Unknown'}`);
+                                } else {
+                                  setNotification('File analyzed successfully!');
+                                }
                                 
                                 // Ensure chat exists and append analysis to that chat
                                 ensureChatForFile(file);
@@ -1482,7 +1533,7 @@ export default function App() {
                         <div className={`category-status ${cat.folder_id ? 'available' : 'missing'}`}>
                           {cat.folder_id ? (
                             <span>
-                              Drive folder available · <a className="category-drive-link" href={`https://drive.google.com/drive/folders/${cat.folder_id}`} target="_blank" rel="noreferrer">Open in Drive</a>
+                              Drive folder available Â· <a className="category-drive-link" href={`https://drive.google.com/drive/folders/${cat.folder_id}`} target="_blank" rel="noreferrer">Open in Drive</a>
                             </span>
                           ) : (cat.missing_folder ? 'Folder missing in Drive' : `Files categorized as ${cat.name}`)}
                         </div>
@@ -1611,7 +1662,25 @@ export default function App() {
                                               <span className="typing-text">Typing...</span>
                                             </div>
                                           ) : (
-                                            <div className="message-text">{msg.content}</div>
+                                            <div>
+                                              <div className="message-text">{msg.content}</div>
+                                              {/* Check if this message has download info */}
+                                              {msg.assistant?.type === 'download' && (
+                                                <div className="mt-3">
+                                                  <Button 
+                                                    tone="primary" 
+                                                    onClick={() => downloadFile(
+                                                      msg.assistant.filename,
+                                                      msg.assistant.base64,
+                                                      msg.assistant.mime
+                                                    )}
+                                                    className="text-sm"
+                                                  >
+                                                    Download {msg.assistant.filename}
+                                                  </Button>
+                                                </div>
+                                              )}
+                                            </div>
                                           )}
                                         </div>
                                       </div>
@@ -1658,6 +1727,42 @@ export default function App() {
                         <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('organize')} disabled={quickActionLoading} loading={quickActionLoading}>
                           Organize Files
                         </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="professional-card mt-6">
+                      <div className="card-heading mb-4">Study Assistant</div>
+                      <div className="space-y-3">
+                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create flowchart')} disabled={!selectedChatId}>
+                          Create Flowchart
+                        </Button>
+                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create revision notes')} disabled={!selectedChatId}>
+                          Revision Notes
+                        </Button>
+                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create flashcards')} disabled={!selectedChatId}>
+                          Generate Flashcards
+                        </Button>
+                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create timeline')} disabled={!selectedChatId}>
+                          Create Timeline
+                        </Button>
+                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create key insights')} disabled={!selectedChatId}>
+                          Key Insights
+                        </Button>
+                      </div>
+                      
+                      <div className="mt-4 pt-4 border-t border-border">
+                        <div className="text-sm text-text-secondary mb-3">Download Formats:</div>
+                        <div className="grid grid-cols-4 gap-2">
+                          <Button tone='secondary' className="text-xs" onClick={() => sendStudyRequest('create revision notes in pdf')} disabled={!selectedChatId}>
+                            PDF
+                          </Button>
+                          <Button tone='secondary' className="text-xs" onClick={() => sendStudyRequest('create revision notes in docx')} disabled={!selectedChatId}>
+                            DOCX
+                          </Button>
+                          <Button tone='secondary' className="text-xs" onClick={() => sendStudyRequest('create revision notes in txt')} disabled={!selectedChatId}>
+                            TXT
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1873,7 +1978,7 @@ export default function App() {
                                   {file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && 'Word Document'}
                                   {!['application/pdf', 'text/plain', 'application/vnd.google-apps.document', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.mimeType) && 'Document'}
                                 </span>
-                                <span className="search-result-divider">•</span>
+                                <span className="search-result-divider">â€¢</span>
                                 <span className="search-result-size-modern">
                                   {file.size ? `${Math.round(file.size / 1024)} KB` : 'Unknown size'}
                                 </span>
@@ -2112,4 +2217,6 @@ export default function App() {
     </div>
   )
 }
+
+
 
