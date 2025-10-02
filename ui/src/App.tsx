@@ -144,6 +144,9 @@ export default function App() {
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null)
   const [showDocumentSelector, setShowDocumentSelector] = useState(false)
   const [currentQuickAction, setCurrentQuickAction] = useState<string | null>(null)
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
+  const [multiFileQuery, setMultiFileQuery] = useState<string>('')
+  const [multiFileOutputType, setMultiFileOutputType] = useState<string>('detailed')
   const [quickActionLoading, setQuickActionLoading] = useState(false)
   const [duplicateResolution, setDuplicateResolution] = useState<{ [key: string]: boolean }>({})
   const [duplicateResolutionLoading, setDuplicateResolutionLoading] = useState(false)
@@ -431,6 +434,38 @@ export default function App() {
     try {
       const chat = chats[selectedChatId]
       const file = chat.file
+      
+      // Special handling for multi-file analysis chats
+      if (file?.id && String(file.id).startsWith('multi_')) {
+        // For multi-file chats, we need to get the original selected files from the chat
+        const multiFileChat = chats[selectedChatId]
+        const originalFiles = multiFileChat.originalFiles || []
+        
+        if (originalFiles.length === 0) {
+          replaceTypingWith('Unable to find original files for this multi-file analysis. Please create a new multi-file analysis.')
+          return
+        }
+        
+        const response = await call('/analyze_multi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            files: originalFiles,
+            query: q,
+            output_type: 'detailed'
+          })
+        })
+        
+        if (response?.error) {
+          replaceTypingWith(`Error: ${response.error}. Please try again.`)
+          return
+        }
+        
+        const analysis = response?.analysis || 'No analysis available'
+        replaceTypingWith(analysis)
+        return
+      }
+      
       if (!file?.id || String(file.id).startsWith('demo-file-')) {
         replaceTypingWith('This is a demo chat. Please pick a real document from Files or run Analyze/Summarize on a Drive file to chat about it.')
         return
@@ -489,7 +524,10 @@ export default function App() {
     // Set the current action and show the document selector
     setCurrentQuickAction(action)
     setShowDocumentSelector(true)
-    setQuickActionLoading(true)
+    // Only set loading for non-multi_files actions
+    if (action !== 'multi_files') {
+      setQuickActionLoading(true)
+    }
   }
 
   // Search functionality
@@ -703,7 +741,7 @@ export default function App() {
             const isDemo = file.id.startsWith('demo-file-')
             ensureChatForFile(file)
             if (isDemo) {
-              const demoContent = `**Summary Feature Demo**\n\nâ€¢ **Feature:** Document Summarization\nâ€¢ **Purpose:** Analyzes document content and provides key insights\nâ€¢ **Usage:** Select a real document to get actual summary\nâ€¢ **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+              const demoContent = `**Summary Feature Demo**\n\nÃ¢â‚¬Â¢ **Feature:** Document Summarization\nÃ¢â‚¬Â¢ **Purpose:** Analyzes document content and provides key insights\nÃ¢â‚¬Â¢ **Usage:** Select a real document to get actual summary\nÃ¢â‚¬Â¢ **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
               appendToChat(file.id, { role: 'assistant', content: demoContent })
               setQuickActionLoading(false)
               setNotification('Summary demo shown')
@@ -746,7 +784,7 @@ export default function App() {
           // Group files by same proposed category (similar to Files tab logic)
           const isDemoSimilar = file.id.startsWith('demo-file-')
           if (isDemoSimilar) {
-            messageContent = `**Find Similar Files Demo**\n\nâ€¢ **Feature:** Similarity Search\nâ€¢ **Purpose:** Groups files by category and content similarity\nâ€¢ **Usage:** Upload files to find actual similar documents\nâ€¢ **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+            messageContent = `**Find Similar Files Demo**\n\nÃ¢â‚¬Â¢ **Feature:** Similarity Search\nÃ¢â‚¬Â¢ **Purpose:** Groups files by category and content similarity\nÃ¢â‚¬Â¢ **Usage:** Upload files to find actual similar documents\nÃ¢â‚¬Â¢ **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
           } else {
             const similarFiles = driveProps.filter(f => 
               f.id !== file.id && 
@@ -762,9 +800,9 @@ export default function App() {
           // Show basic file information (what Summary used to show)
           const isDemoInsights = file.id.startsWith('demo-file-')
           if (isDemoInsights) {
-            messageContent = `**Extract Insights Demo**\n\nâ€¢ **Feature:** Document Analysis & Insights\nâ€¢ **Purpose:** Extracts key information and patterns from documents\nâ€¢ **Usage:** Upload files to get actual insights\nâ€¢ **Status:** Ready to analyze your documents\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+            messageContent = `**Extract Insights Demo**\n\nÃ¢â‚¬Â¢ **Feature:** Document Analysis & Insights\nÃ¢â‚¬Â¢ **Purpose:** Extracts key information and patterns from documents\nÃ¢â‚¬Â¢ **Usage:** Upload files to get actual insights\nÃ¢â‚¬Â¢ **Status:** Ready to analyze your documents\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
           } else {
-            messageContent = `**File Insights for "${file.name}"**\n\nâ€¢ **File Name:** ${file.name}\nâ€¢ **Proposed Category:** ${file.proposed_category}\nâ€¢ **Type:** Document file\nâ€¢ **Status:** Available for organization\n\nThis file has been analyzed and categorized. You can approve its organization in the Files tab.`
+            messageContent = `**File Insights for "${file.name}"**\n\nÃ¢â‚¬Â¢ **File Name:** ${file.name}\nÃ¢â‚¬Â¢ **Proposed Category:** ${file.proposed_category}\nÃ¢â‚¬Â¢ **Type:** Document file\nÃ¢â‚¬Â¢ **Status:** Available for organization\n\nThis file has been analyzed and categorized. You can approve its organization in the Files tab.`
           }
           break
           
@@ -772,11 +810,23 @@ export default function App() {
           // Redirect to Files tab for organization
           const isDemoOrganize = file.id.startsWith('demo-file-')
           if (isDemoOrganize) {
-            messageContent = `**Organize Files Demo**\n\nâ€¢ **Feature:** File Organization\nâ€¢ **Purpose:** Automatically categorizes and organizes documents\nâ€¢ **Usage:** Upload files to organize them into folders\nâ€¢ **Status:** Ready to organize your documents\n\n**To use with real files:** Upload documents via the Chrome extension, then use the Files tab to approve organization.`
+            messageContent = `**Organize Files Demo**\n\nÃ¢â‚¬Â¢ **Feature:** File Organization\nÃ¢â‚¬Â¢ **Purpose:** Automatically categorizes and organizes documents\nÃ¢â‚¬Â¢ **Usage:** Upload files to organize them into folders\nÃ¢â‚¬Â¢ **Status:** Ready to organize your documents\n\n**To use with real files:** Upload documents via the Chrome extension, then use the Files tab to approve organization.`
           } else {
             setTab('drive')
-            messageContent = `**Organization for "${file.name}"**\n\nâ€¢ **Target Category:** ${file.proposed_category}\nâ€¢ **Action Required:** Please go to the Files tab to approve this file's organization\nâ€¢ **Status:** Redirected to Files tab\n\nYou can now find this file in the Files tab and click "Approve" to organize it properly.`
+            messageContent = `**Organization for "${file.name}"**\n\nÃ¢â‚¬Â¢ **Target Category:** ${file.proposed_category}\nÃ¢â‚¬Â¢ **Action Required:** Please go to the Files tab to approve this file's organization\nÃ¢â‚¬Â¢ **Status:** Redirected to Files tab\n\nYou can now find this file in the Files tab and click "Approve" to organize it properly.`
           }
+          break
+          
+        case 'multi_files':
+          // Always set up multi-file analysis (no demo mode for multi-files)
+          // Set up multi-file analysis
+            setCurrentQuickAction('multi_files')
+            setShowDocumentSelector(true)
+            setQuickActionLoading(false)  // Reset loading state
+            setSelectedFiles([])  // Reset selected files
+            setMultiFileQuery('')  // Reset query
+            setNotification('Select multiple files for analysis...')
+            return
           break
           
         default:
@@ -840,7 +890,7 @@ export default function App() {
               className="notification-close"
               title="Close notification"
             >
-              Ã—
+              Ãƒâ€”
             </button>
           </div>
         </div>
@@ -1077,7 +1127,7 @@ export default function App() {
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                                 </svg>
-                                {file.approved ? 'Approved' : 'Approve'}d
+                                Approved
                               </span>
                             ) : (
                               <span className="flex items-center gap-2">
@@ -1284,7 +1334,7 @@ export default function App() {
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                                   </svg>
-                                  {file.approved ? 'Approved' : 'Approve'}d to: {file.final_category || file.proposed_category}
+                                  Approved to: {file.final_category || file.proposed_category}
                                 </div>
                               ) : (
                                 `Proposed Category: ${file.proposed_category}`
@@ -1533,7 +1583,7 @@ export default function App() {
                         <div className={`category-status ${cat.folder_id ? 'available' : 'missing'}`}>
                           {cat.folder_id ? (
                             <span>
-                              Drive folder available Â· <a className="category-drive-link" href={`https://drive.google.com/drive/folders/${cat.folder_id}`} target="_blank" rel="noreferrer">Open in Drive</a>
+                              Drive folder available Ã‚Â· <a className="category-drive-link" href={`https://drive.google.com/drive/folders/${cat.folder_id}`} target="_blank" rel="noreferrer">Open in Drive</a>
                             </span>
                           ) : (cat.missing_folder ? 'Folder missing in Drive' : `Files categorized as ${cat.name}`)}
                         </div>
@@ -1726,6 +1776,9 @@ export default function App() {
                         </Button>
                         <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('organize')} disabled={quickActionLoading} loading={quickActionLoading}>
                           Organize Files
+                        </Button>
+                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => handleQuickAction('multi_files')} disabled={quickActionLoading} loading={quickActionLoading}>
+                           Multi-Files Analysis
                         </Button>
                       </div>
                     </div>
@@ -1978,7 +2031,7 @@ export default function App() {
                                   {file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && 'Word Document'}
                                   {!['application/pdf', 'text/plain', 'application/vnd.google-apps.document', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.mimeType) && 'Document'}
                                 </span>
-                                <span className="search-result-divider">â€¢</span>
+                                <span className="search-result-divider">Ã¢â‚¬Â¢</span>
                                 <span className="search-result-size-modern">
                                   {file.size ? `${Math.round(file.size / 1024)} KB` : 'Unknown size'}
                                 </span>
@@ -2148,16 +2201,19 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="quick-action-title">
-                    Select a Document
+                    {currentQuickAction === 'multi_files' ? 'Select Multiple Documents' : 'Select a Document'}
                   </h3>
                   <p className="quick-action-subtitle">
-                    Choose a document to {currentQuickAction?.replace('_', ' ')}
+                    {currentQuickAction === 'multi_files' ? 'Choose multiple documents to analyze together' : `Choose a document to ${currentQuickAction?.replace('_', ' ')}`}
                   </p>
                 </div>
                 <button 
                   onClick={() => {
                     setShowDocumentSelector(false)
                     setQuickActionLoading(false)
+                    setSelectedFiles([])  // Reset selected files
+                    setMultiFileQuery('')  // Reset query
+                    setMultiFileOutputType('detailed')  // Reset output type
                   }}
                   className="quick-action-close"
                 >
@@ -2169,6 +2225,36 @@ export default function App() {
             </div>
             
             <div className="quick-action-content">
+              {currentQuickAction === 'multi_files' && (
+                <div className="mb-4 space-y-3 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Query:</label>
+                    <input
+                      type="text"
+                      value={multiFileQuery}
+                      onChange={(e) => setMultiFileQuery(e.target.value)}
+                      placeholder="What would you like to analyze across these files?"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Output Type:</label>
+                    <select
+                      value={multiFileOutputType}
+                      onChange={(e) => setMultiFileOutputType(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="detailed">Detailed Report</option>
+                      <option value="flowchart">Flowchart</option>
+                      <option value="timeline">Timeline</option>
+                      <option value="short_notes">Short Notes</option>
+                    </select>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Selected files: {selectedFiles.length} / {driveProps.length}
+                  </div>
+                </div>
+              )}
               {driveProps.length === 0 ? (
                 <div className="documents-empty">
                   <div className="documents-empty-icon"></div>
@@ -2180,14 +2266,34 @@ export default function App() {
                     <button
                       key={file.id}
                       onClick={() => {
-                        setShowDocumentSelector(false)
-                        setNotification(`Selected: ${file.name}`)
-                        performQuickAction(currentQuickAction!, file)
+                        if (currentQuickAction === 'multi_files') {
+                          // Toggle selection for multi-file
+                          setSelectedFiles(prev => 
+                            prev.includes(file.id) 
+                              ? prev.filter(id => id !== file.id)
+                              : [...prev, file.id]
+                          )
+                        } else {
+                          // Single file selection
+                          setShowDocumentSelector(false)
+                          setNotification(`Selected: ${file.name}`)
+                          performQuickAction(currentQuickAction!, file)
+                        }
                       }}
                       className="document-item"
                       style={{ animationDelay: `${index * 100}ms` }}
                     >
                       <div className="flex items-center">
+                        {currentQuickAction === 'multi_files' && (
+                          <div className="mr-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedFiles.includes(file.id)}
+                              onChange={() => {}}
+                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                          </div>
+                        )}
                         <div className="document-avatar">
                           {file.name.charAt(0).toUpperCase()}
                         </div>
@@ -2211,12 +2317,144 @@ export default function App() {
                 </div>
               )}
             </div>
+            {currentQuickAction === 'multi_files' && (
+              <div className="multi-file-button-area">
+                <button
+                  onClick={async () => {
+                    if (selectedFiles.length === 0) {
+                      setNotification('Please select at least one file')
+                      return
+                    }
+                    if (!multiFileQuery.trim()) {
+                      setNotification('Please enter a query')
+                      return
+                    }
+                    
+                    setQuickActionLoading(true)
+                    setShowDocumentSelector(false)
+                    setNotification(`Analyzing ${selectedFiles.length} files...`)
+                    
+                    try {
+                      const selectedFileObjects = driveProps.filter(f => f && f.id && selectedFiles.includes(f.id))
+                      
+                      if (selectedFileObjects.length === 0) {
+                        setNotification('No valid files found for analysis')
+                        setQuickActionLoading(false)
+                        return
+                      }
+                      
+                      console.log('Selected file objects:', selectedFileObjects)
+                      
+                      const response = await call('/analyze_multi', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          files: selectedFileObjects,
+                          query: multiFileQuery,
+                          output_type: multiFileOutputType
+                        })
+                      })
+                      
+                      // Create a combined chat for multi-file analysis
+                      const multiFileId = `multi_${Date.now()}`
+                      const analysisContent = `**Multi-File Analysis Results**\n\n**Query:** ${multiFileQuery}\n**Output Type:** ${multiFileOutputType}\n**Files Analyzed:** ${selectedFiles.length}\n\n**Analysis:**\n\n${response.analysis}`
+                      
+                      // Create a dummy file object for the multi-file chat with original files stored
+                      const multiFileObject = {
+                        id: multiFileId,
+                        name: `Multi-File Analysis (${selectedFiles.length} files)`,
+                        proposed_category: 'Multi-File Analysis',
+                        approved: false,
+                        originalFiles: selectedFileObjects, // Store original files for follow-up questions
+                        originalQuery: multiFileQuery,
+                        originalOutputType: multiFileOutputType
+                      }
+                      
+                      setChats(prev => ({
+                        ...prev,
+                        [multiFileId]: {
+                          file: multiFileObject,
+                          originalFiles: selectedFileObjects, // Store original files for follow-up questions
+                          messages: [
+                            { role: 'assistant', content: analysisContent }
+                          ]
+                        }
+                      }))
+                      
+                      setSelectedChatId(multiFileId)
+                      setTab('ai')
+                      setNotification('Multi-file analysis completed!')
+                      
+                      // Reset state
+                      setSelectedFiles([])
+                      setMultiFileQuery('')
+                      setMultiFileOutputType('detailed')
+                      
+                    } catch (error: any) {
+                      setNotification(`Analysis failed: ${error?.message || 'Unknown error'}`)
+                    } finally {
+                      setQuickActionLoading(false)
+                    }
+                  }}
+                  disabled={selectedFiles.length === 0 || !multiFileQuery.trim() || quickActionLoading}
+                  className="multi-file-analyze-button"
+                  title={
+                    selectedFiles.length === 0 
+                      ? 'Please select at least one file' 
+                      : !multiFileQuery.trim() 
+                        ? 'Please enter a query' 
+                        : quickActionLoading 
+                          ? 'Analysis in progress...'
+                          : 'Click to start analysis'
+                  }
+                >
+                  {quickActionLoading 
+                    ? 'â³ Analyzing...' 
+                    : selectedFiles.length === 0 
+                      ? 'ðŸ“‚ Select Files First' 
+                      : !multiFileQuery.trim()
+                        ? 'âœï¸ Enter Query First'
+                        : `ðŸš€ SUBMIT (${selectedFiles.length} File${selectedFiles.length !== 1 ? 's' : ''})`
+                  }
+                </button>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

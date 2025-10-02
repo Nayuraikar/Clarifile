@@ -785,6 +785,19 @@ app.post('/search_files', async (req, res) => {
   }
 });
 
+// Multi-file analysis
+app.post('/analyze_multi', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const body = { ...req.body, auth_token: req.body?.auth_token || DRIVE_TOKEN };
+    const r = await axios.post(`${PARSER}/analyze_multi`, body);
+    res.json(r.data);
+  } catch (e) { 
+    console.error('Multi-file analysis error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.detail || e.toString() }); 
+  }
+});
+
 // Visual search files in Drive by image content
 app.post('/visual_search', async (req, res) => {
   try {
