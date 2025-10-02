@@ -87,3 +87,5 @@ gemini_keys.txt
 
 # Ignore semantic search cache
 services/.search_cache/
+# Ignore virtual env
+.venv312/

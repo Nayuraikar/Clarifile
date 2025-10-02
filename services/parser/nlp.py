@@ -7,11 +7,36 @@ import nltk
 from typing import Dict
 from nltk.tokenize import sent_tokenize
 
-# Ensure NLTK resources are downloaded
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt', quiet=True)
+# Ensure NLTK resources are downloaded with fallback
+def ensure_nltk_punkt():
+    """Ensure punkt tokenizer is available with fallback handling."""
+    punkt_available = False
+    for punkt_name in ['punkt_tab', 'punkt']:
+        try:
+            nltk.data.find(f'tokenizers/{punkt_name}')
+            punkt_available = True
+            print(f"Found NLTK resource: {punkt_name}")
+            break
+        except LookupError:
+            continue
+    
+    if not punkt_available:
+        # Try to download punkt_tab first, then punkt as fallback
+        for punkt_name in ['punkt_tab', 'punkt']:
+            try:
+                print(f"Downloading NLTK resource: {punkt_name}")
+                nltk.download(punkt_name, quiet=True)
+                punkt_available = True
+                break
+            except Exception as e:
+                print(f"Failed to download {punkt_name}: {e}")
+                continue
+        
+        if not punkt_available:
+            print("Warning: Failed to download punkt tokenizer. Sentence tokenization may not work properly.")
+
+# Initialize punkt tokenizer
+ensure_nltk_punkt()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_API_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEYS", "").split(",") if k.strip()]

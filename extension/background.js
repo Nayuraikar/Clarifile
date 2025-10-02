@@ -1,4 +1,4 @@
-const CLIENT_ID = '1085724686418-fgvn7on50g4dmq2la1q84dflt66at0mo.apps.googleusercontent.com';
+const CLIENT_ID = '36164233493-07lkvfog3bsucv4vfr6gi666ld2ck9eb.apps.googleusercontent.com';
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.metadata.readonly'

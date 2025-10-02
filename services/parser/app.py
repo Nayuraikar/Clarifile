@@ -21,6 +21,8 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from smart_categorizer import SmartCategorizer
 import nlp
+from services.categorizer_fallback import categorize_with_fallback
+from semantic_search import hybrid_search, semantic_search, clean_query
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -63,6 +65,52 @@ class DriveAnalyzeRequest(BaseModel):
     class Config:
         extra = 'allow'
 
+
+# --- Category DB helpers ---
+def _ensure_categories_table():
+    try:
+        conn = sqlite3.connect(DB)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE,
+                rep_summary TEXT,
+                rep_vector TEXT
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def get_or_create_category_id(category_name: str, rep_content: str = "") -> int | None:
+    if not category_name:
+        return None
+    _ensure_categories_table()
+    try:
+        conn = sqlite3.connect(DB)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO categories(name, rep_summary, rep_vector) VALUES (?,?,?)",
+            (category_name, rep_content[:500] if rep_content else "", "[]")
+        )
+        conn.commit()
+        cur.execute("SELECT id FROM categories WHERE name=?", (category_name,))
+        row = cur.fetchone()
+        return int(row[0]) if row else None
+    except Exception:
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 # --- Google Drive helpers ---
 def get_drive_service(token: str):
@@ -203,17 +251,38 @@ def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)
         print(f"EXTRACTION DEBUG: Text preview: '{text[:300] if text else 'NO TEXT'}'")
         print(f"EXTRACTION DEBUG: Summary preview: '{summary[:200] if summary else 'NO SUMMARY'}'")
         
-        # FORCE CATEGORIZATION WITH ACTUAL CONTENT
+        # FORCE CATEGORIZATION WITH ACTUAL CONTENT (hybrid + fallback)
         if text and len(text.strip()) > 10:
             print(f"FORCING CATEGORIZATION with extracted text")
-            cat_id, cat_name = assign_category_from_summary("", text)
-            if cat_name == "CATEGORIZATION_FAILED":
+            try:
+                # Prefer new hybrid categorizer; fall back to legacy assigner
+                cat_name, debug = categorize_with_fallback(text, existing_categorizer=getattr(smart_categorizer, "categorize", None))
+            except Exception as _e:
+                cat_name, debug = None, {"error": str(_e)}
+
+            if not cat_name:
+                # Legacy path (kept for compatibility with DB/category ID expectations)
+                cat_id, cat_name = assign_category_from_summary("", text)
+            else:
+                # Persist/lookup the new category in DB for UI visibility
+                cat_id = get_or_create_category_id(cat_name, rep_content=text)
+            
+            if not cat_name or cat_name == "CATEGORIZATION_FAILED":
                 print(f"CATEGORIZATION FAILED - content could not be properly categorized")
                 raise HTTPException(status_code=422, detail="Could not categorize file content - no matching category found")
         elif summary and len(summary.strip()) > 10:
             print(f"FORCING CATEGORIZATION with summary")
-            cat_id, cat_name = assign_category_from_summary(summary, "")
-            if cat_name == "CATEGORIZATION_FAILED":
+            try:
+                cat_name, debug = categorize_with_fallback(summary, existing_categorizer=getattr(smart_categorizer, "categorize", None))
+            except Exception as _e:
+                cat_name, debug = None, {"error": str(_e)}
+
+            if not cat_name:
+                cat_id, cat_name = assign_category_from_summary(summary, "")
+            else:
+                cat_id = get_or_create_category_id(cat_name, rep_content=summary)
+
+            if not cat_name or cat_name == "CATEGORIZATION_FAILED":
                 print(f"CATEGORIZATION FAILED - summary could not be properly categorized")
                 raise HTTPException(status_code=422, detail="Could not categorize file content - no matching category found")
         else:

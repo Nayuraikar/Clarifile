@@ -88,12 +88,53 @@ def smart_chunks(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Download required NLTK data
-for resource in ['punkt', 'stopwords', 'wordnet']:
-    try:
-        nltk.data.find(f'tokenizers/{resource}')
-    except LookupError:
-        nltk.download(resource)
+# Download required NLTK data with fallback for punkt/punkt_tab
+def ensure_nltk_resources():
+    """Ensure required NLTK resources are available with fallback handling."""
+    resources_to_download = []
+    
+    # Check punkt_tab (new) or punkt (old) for sentence tokenization
+    punkt_available = False
+    for punkt_name in ['punkt_tab', 'punkt']:
+        try:
+            nltk.data.find(f'tokenizers/{punkt_name}')
+            punkt_available = True
+            logger.info(f"Found NLTK resource: {punkt_name}")
+            break
+        except LookupError:
+            continue
+    
+    if not punkt_available:
+        # Try to download punkt_tab first, then punkt as fallback
+        for punkt_name in ['punkt_tab', 'punkt']:
+            try:
+                logger.info(f"Downloading NLTK resource: {punkt_name}")
+                nltk.download(punkt_name, quiet=True)
+                punkt_available = True
+                break
+            except Exception as e:
+                logger.warning(f"Failed to download {punkt_name}: {e}")
+                continue
+        
+        if not punkt_available:
+            logger.error("Failed to download punkt tokenizer. Sentence tokenization may not work properly.")
+    
+    # Check other required resources
+    for resource in ['stopwords', 'wordnet']:
+        try:
+            if resource == 'stopwords':
+                nltk.data.find('corpora/stopwords')
+            elif resource == 'wordnet':
+                nltk.data.find('corpora/wordnet')
+        except LookupError:
+            try:
+                logger.info(f"Downloading NLTK resource: {resource}")
+                nltk.download(resource, quiet=True)
+            except Exception as e:
+                logger.warning(f"Failed to download {resource}: {e}")
+
+# Initialize NLTK resources
+ensure_nltk_resources()
 
 # Initialize stop words
 STOP_WORDS = set(stopwords.words('english'))
