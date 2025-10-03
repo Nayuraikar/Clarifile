@@ -32,7 +32,8 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 DB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "metadata_db", "clarifile.db")
 ALLOWED_EXTS = {
     ".txt", ".pdf", ".png", ".jpg", ".jpeg",
-    ".mp3", ".wav", ".mp4", ".mkv", ".mpeg"
+    ".mp3", ".wav", ".mp4", ".mkv", ".mpeg",
+    ".docx"
 }
 
 app = FastAPI()
@@ -247,6 +248,8 @@ def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)
             text = read_text_file(path)
         elif ext == ".pdf":
             text = extract_text_from_pdf(path)
+        elif ext == ".docx":
+            text = extract_text_from_docx(path)
         elif ext in {".png", ".jpg", ".jpeg"}:
             text = extract_text_from_image(path)
             tags.append(classify_image(path))
@@ -345,6 +348,8 @@ def assistant_generate(req: AssistantGenerateRequest):
                 text = read_text_file(path)
             elif ext == ".pdf":
                 text = extract_text_from_pdf(path)
+            elif ext == ".docx":
+                text = extract_text_from_docx(path)
             elif ext in {".png", ".jpg", ".jpeg"}:
                 text = extract_text_from_image(path)
             elif ext in {".mp3", ".wav"}:
@@ -646,6 +651,22 @@ def extract_text_from_image(path):
         return pytesseract.image_to_string(img)
     except Exception as e:
         print("Image OCR error:", e)
+        return ""
+
+def extract_text_from_docx(path):
+    """Extract text from a DOCX file."""
+    try:
+        import docx2txt
+        return docx2txt.process(path)
+    except ImportError:
+        print("docx2txt not installed. Installing now...")
+        import subprocess
+        import sys
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "docx2txt"])
+        import docx2txt
+        return docx2txt.process(path)
+    except Exception as e:
+        print(f"Error extracting text from DOCX: {e}")
         return ""
 
 # --- Audio/Video + CV ---
@@ -2434,6 +2455,9 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                         elif ext == ".pdf":
                             text = extract_text_from_pdf(path)
                             print(f"Extracted {len(text)} characters from PDF")
+                        elif ext == ".docx":
+                            text = extract_text_from_docx(path)
+                            print(f"Extracted {len(text)} characters from DOCX")
                         elif ext in {".png", ".jpg", ".jpeg"}:
                             text = extract_text_from_image(path)
                             print(f"Extracted {len(text)} characters from image OCR")
@@ -2818,6 +2842,8 @@ def ask(file_id: int = Query(...), q: str = Query(...)):
             extracted_text = read_text_file(file_path)
         elif ext == ".pdf":
             extracted_text = extract_text_from_pdf(file_path)
+        elif ext == ".docx":
+            extracted_text = extract_text_from_docx(file_path)
         elif ext in {".png", ".jpg", ".jpeg"}:
             extracted_text = extract_text_from_image(file_path)
         elif ext in {".mp3", ".wav"}:
@@ -2919,6 +2945,8 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                         text = read_text_file(path)
                     elif ext == ".pdf":
                         text = extract_text_from_pdf(path)
+                    elif ext == ".docx":
+                        text = extract_text_from_docx(path)
                     elif ext in {".png", ".jpg", ".jpeg"}:
                         text = extract_text_from_image(path)
                     elif ext in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}:
@@ -3365,6 +3393,8 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
                     text_content = extract_text_from_pdf(file_path)
                 elif file['mimeType'] == 'text/plain' or file_name.endswith('.txt'):
                     text_content = read_text_file(file_path)
+                elif file['mimeType'] == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' or file_name.endswith('.docx'):
+                    text_content = extract_text_from_docx(file_path)
                 elif file['mimeType'] == 'application/vnd.google-apps.document':
                     # For Google Docs, we need to export as text
                     try:
@@ -4154,6 +4184,8 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
                     text = read_text_file(path)
                 elif ext == ".pdf":
                     text = extract_text_from_pdf(path)
+                elif ext == ".docx":
+                    text = extract_text_from_docx(path)
                 elif ext in {".png", ".jpg", ".jpeg"}:
                     text = extract_text_from_image(path)
                 elif ext in {".mp3", ".wav"}:
