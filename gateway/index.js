@@ -21,9 +21,9 @@ let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = '36164233493-07lkvfog3bsucv4vfr6gi666ld2ck9eb.apps.googleusercontent.com'; 
-const CLIENT_SECRET = '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';                         
-const REDIRECT_URI = 'https://jionigabfkoccikmjaloladbdcbegibp.chromiumapp.org/';
+const CLIENT_ID = '36164233493xxxxxxx'; 
+const CLIENT_SECRET = 'GOCSPX-xxxxxxxx';                         
+const REDIRECT_URI = 'https://jxxxxxxxxg/';
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
@@ -777,7 +777,7 @@ app.post('/search_files', async (req, res) => {
     const query = req.body?.query;
     if (!query) return res.status(400).json({ error: 'missing search query' });
     
-    const r = await axios.post(`${PARSER}/search_files?auth_token=${encodeURIComponent(DRIVE_TOKEN)}`, { query });
+    const r = await axios.post(`${PARSER}/search_files?auth_token=${encodeURIComponent(DRIVE_TOKEN)}`, req.body);
     res.json(r.data);
   } catch (e) { 
     console.error('Search error:', e.response?.data || e.message);

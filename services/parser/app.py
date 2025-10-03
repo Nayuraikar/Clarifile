@@ -3294,7 +3294,8 @@ def get_context_around_match(text: str, query_terms: set, window_size: int = 150
 @app.post("/search_files")
 async def search_files(req: SearchRequest, auth_token: str | None = Query(None)):
     """
-    Search Google Drive files by content. Supports PDF, TXT, and DOCS files.
+    Search Google Drive files by content. Supports PDF, TXT, DOCS, IMAGES, and AUDIO files.
+    For images, uses OCR to extract text. For audio files, uses transcription.
     Returns files that contain the search query in their content.
     """
     print(f"SEARCH_FILES ENDPOINT CALLED with query: '{req.query}'")
@@ -3316,8 +3317,24 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
         if not service:
             raise HTTPException(status_code=400, detail="Failed to authenticate with Google Drive")
         
-        # Search for files in Google Drive (PDF, TXT, DOCS)
-        search_query = "mimeType='application/pdf' or mimeType='text/plain' or mimeType='application/vnd.google-apps.document' or mimeType='application/msword' or mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'"
+        # Search for files in Google Drive (PDF, TXT, DOCS, IMAGES, AUDIO)
+        search_query = (
+            "mimeType='application/pdf' or "
+            "mimeType='text/plain' or "
+            "mimeType='application/vnd.google-apps.document' or "
+            "mimeType='application/msword' or "
+            "mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document' or "
+            "mimeType='image/jpeg' or "
+            "mimeType='image/png' or "
+            "mimeType='image/gif' or "
+            "mimeType='image/bmp' or "
+            "mimeType='image/webp' or "
+            "mimeType='audio/mpeg' or "
+            "mimeType='audio/wav' or "
+            "mimeType='audio/mp3' or "
+            "mimeType='audio/m4a' or "
+            "mimeType='audio/ogg'"
+        )
         
         results = service.files().list(
             q=f"({search_query}) and trashed=false",
@@ -3362,6 +3379,14 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
                 elif file['mimeType'] in ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
                     # For Word documents, try to extract text (basic implementation)
                     text_content = read_text_file(file_path)
+                elif file['mimeType'].startswith('image/') or file_name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
+                    # For images, extract text using OCR
+                    print(f"Extracting text from image: {file['name']}")
+                    text_content = extract_text_from_image(file_path)
+                elif file['mimeType'].startswith('audio/') or file_name.endswith(('.mp3', '.wav', '.m4a', '.ogg')):
+                    # For audio files, extract text using transcription
+                    print(f"Transcribing audio file: {file['name']}")
+                    text_content = transcribe_audio(file_path)
                 
                 # Clean up the downloaded file
                 try:
@@ -3881,7 +3906,8 @@ class UpdateCategoryRequest(BaseModel):
 class MultiFileAnalysisRequest(BaseModel):
     files: list[dict]  # List of file objects with id, name, etc.
     query: str
-    output_type: str = "detailed"  # detailed, flowchart, timeline, short_notes
+    output_type: str = "detailed"  # detailed, flowchart, timeline, short_notes, key_insights, flashcards
+    format: Optional[str] = None  # md, txt, docx, pdf for downloadable outputs
     auth_token: Optional[str] = None
 
 @app.post("/update_category")
@@ -3998,6 +4024,95 @@ def clear_proposals():
         print(f"Error clearing proposals: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to clear proposals: {str(e)}")
 
+def generate_flashcards_from_content(combined_text: str, file_summaries: list) -> list:
+    """Generate flashcards from the combined content of multiple files"""
+    flashcards = []
+    
+    # Convert to lowercase for easier matching
+    content_lower = combined_text.lower()
+    
+    # DSA-specific flashcards based on content
+    if 'data structure' in content_lower:
+        if 'way of organizing' in content_lower or 'storing data' in content_lower:
+            flashcards.append({
+                'question': 'What is a Data Structure?',
+                'answer': 'A way of organizing and storing data for efficient access and modification.'
+            })
+    
+    if 'algorithm' in content_lower:
+        if 'step' in content_lower or 'procedure' in content_lower or 'operations efficiently' in content_lower:
+            flashcards.append({
+                'question': 'What is an Algorithm?',
+                'answer': 'A step-by-step procedure or set of rules for solving problems and performing operations efficiently.'
+            })
+    
+    if 'foundation' in content_lower and 'computer science' in content_lower:
+        flashcards.append({
+            'question': 'Why are Data Structures and Algorithms important?',
+            'answer': 'They form the foundation of computer science and software development, enabling efficient problem-solving and optimal performance.'
+        })
+    
+    # Extract key concepts from the actual content
+    if 'optimization' in content_lower or 'efficient' in content_lower:
+        flashcards.append({
+            'question': 'What is the main goal of using proper data structures and algorithms?',
+            'answer': 'To optimize performance and enable efficient computing by organizing data and operations effectively.'
+        })
+    
+    if 'complexity' in content_lower:
+        flashcards.append({
+            'question': 'What is algorithmic complexity?',
+            'answer': 'A measure of how the performance of an algorithm changes with the size of the input, typically expressed in time and space complexity.'
+        })
+    
+    # Generate flashcards based on file types and content
+    pdf_files = [f for f in file_summaries if f['name'].endswith('.pdf')]
+    if pdf_files:
+        flashcards.append({
+            'question': 'What type of content is typically found in research papers about DSA?',
+            'answer': 'Theoretical foundations, optimization techniques, performance analysis, and advanced algorithmic concepts.'
+        })
+    
+    image_files = [f for f in file_summaries if f['name'].endswith(('.jpg', '.png'))]
+    if image_files:
+        flashcards.append({
+            'question': 'How can lecture notes in image format be useful for studying DSA?',
+            'answer': 'They provide visual representations of concepts, diagrams, and structured notes that can enhance understanding of complex topics.'
+        })
+    
+    audio_files = [f for f in file_summaries if f['name'].endswith(('.mp3', '.wav'))]
+    if audio_files:
+        flashcards.append({
+            'question': 'What are the benefits of audio lectures for learning DSA?',
+            'answer': 'Audio content provides explanations in natural language, making complex concepts more accessible and allowing for passive learning.'
+        })
+    
+    # If no specific flashcards were generated, create generic ones
+    if not flashcards:
+        flashcards = [
+            {
+                'question': 'What are the main components covered in this multi-file study material?',
+                'answer': f'The material covers {len(file_summaries)} files with content about data structures, algorithms, and computer science fundamentals.'
+            },
+            {
+                'question': 'How many different file formats are included in this study collection?',
+                'answer': f'The collection includes {len(set(f["name"].split(".")[-1] if "." in f["name"] else "unknown" for f in file_summaries))} different file formats for comprehensive learning.'
+            },
+            {
+                'question': 'What is the total amount of content in this study material?',
+                'answer': f'The complete material contains {len(combined_text):,} characters across all files, providing substantial content for study.'
+            }
+        ]
+    
+    # Ensure we have at least 3 flashcards
+    while len(flashcards) < 3:
+        flashcards.append({
+            'question': f'What can you learn from File {len(flashcards)}: {file_summaries[min(len(flashcards)-1, len(file_summaries)-1)]["name"]}?',
+            'answer': f'This file contains {file_summaries[min(len(flashcards)-1, len(file_summaries)-1)]["length"]} characters of content related to the study topic.'
+        })
+    
+    return flashcards[:6]  # Return max 6 flashcards
+
 @app.post("/analyze_multi")
 def analyze_multi_files(req: MultiFileAnalysisRequest):
     """Analyze multiple files together and generate a unified report"""
@@ -4055,7 +4170,8 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
                     file_summary = {
                         "name": file_name,
                         "length": len(text),
-                        "preview": text[:200] + "..." if len(text) > 200 else text
+                        "preview": text[:500] + "..." if len(text) > 500 else text,
+                        "full_text": text  # Store full text for better analysis
                     }
                     file_summaries.append(file_summary)
                     print(f"Extracted {len(text)} characters from {file_name}")
@@ -4080,10 +4196,70 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
             "detailed": f"Provide a comprehensive, detailed analysis of the following documents to answer this question: {req.query}\n\nAnalyze all the documents together and provide insights, connections, and conclusions.",
             "flowchart": f"Create a flowchart representation (in text format with arrows and boxes) based on the following documents to answer: {req.query}\n\nShow the flow of processes, decisions, or concepts across all documents.",
             "timeline": f"Create a chronological timeline based on the following documents to answer: {req.query}\n\nExtract dates, events, and sequence of activities from all documents and present them in chronological order.",
-            "short_notes": f"Summarize the following documents into concise, bullet-point notes to answer: {req.query}\n\nProvide key takeaways and important points from all documents."
+            "short_notes": f"Summarize the following documents into concise, bullet-point notes to answer: {req.query}\n\nProvide key takeaways and important points from all documents.",
+            "key_insights": f"Extract key insights and important findings from the following documents to answer: {req.query}\n\nIdentify the most important points, patterns, and conclusions across all documents.",
+            "flashcards": f"Create Q&A flashcards based on the following documents to answer: {req.query}\n\nGenerate question-answer pairs that capture the key concepts and information from all documents."
         }
         
         prompt = output_prompts.get(req.output_type, output_prompts["detailed"])
+        
+        # Check if we should use assistant generator for structured outputs
+        use_assistant_generator = req.output_type in ['flowchart', 'flashcards', 'key_insights'] and req.format
+        
+        if use_assistant_generator:
+            # Use assistant generator for structured outputs with downloadable formats
+            try:
+                print(f"Using assistant generator for {req.output_type} with format {req.format}")
+                
+                # Map output types to assistant generator kinds
+                kind_mapping = {
+                    'flowchart': 'flowchart',
+                    'flashcards': 'flashcards', 
+                    'key_insights': 'key_insights',
+                    'timeline': 'timeline',
+                    'short_notes': 'short_notes'
+                }
+                
+                kind = kind_mapping.get(req.output_type, 'detailed_notes')
+                
+                # Generate using assistant generator
+                generated_kind, content = generate(kind, combined_text)
+                filename, b64 = export_bytes(generated_kind, content, req.format or "md")
+                
+                # Get MIME type for the format
+                mime = {
+                    'md': 'text/markdown',
+                    'markdown': 'text/markdown', 
+                    'txt': 'text/plain',
+                    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'pdf': 'application/pdf'
+                }.get((req.format or 'md').lower(), 'application/octet-stream')
+                
+                # Prepare response with downloadable content
+                response = {
+                    "query": req.query,
+                    "output_type": req.output_type,
+                    "files_processed": len(all_texts),
+                    "total_files": len(req.files),
+                    "file_summaries": file_summaries,
+                    "analysis": content,  # Raw content for display
+                    "combined_length": len(combined_text),
+                    "assistant": {
+                        "type": "download",
+                        "kind": generated_kind,
+                        "filename": filename,
+                        "base64": b64,
+                        "mime": mime,
+                        "content": content
+                    }
+                }
+                
+                print(f"Multi-file analysis with assistant generator completed successfully")
+                return response
+                
+            except Exception as e:
+                print(f"Assistant generator failed, falling back to NLP service: {e}")
+                # Fall through to regular NLP generation
         
         # Generate analysis using existing NLP service
         try:
@@ -4101,13 +4277,19 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
             else:
                 # This is a general analysis request, use gemini_generate
                 full_prompt = f"{prompt}\n\nDocuments:\n{combined_text}"
+                print(f"Calling gemini_generate with prompt length: {len(full_prompt)}")
                 analysis = nlp.gemini_generate(full_prompt, temperature=0.3, max_output_tokens=1024)
+                print(f"Gemini returned: {len(analysis) if analysis else 0} characters")
             
             # Clean up the response - remove excessive asterisks and formatting
             if analysis:
                 # Remove multiple asterisks and clean formatting
                 analysis = re.sub(r'\*{2,}', '', analysis)  # Remove all bold asterisks
                 analysis = analysis.strip()
+                print(f"NLP service returned analysis: {len(analysis)} characters")
+            else:
+                print("NLP service returned empty or None analysis, using fallback")
+                analysis = None  # Force fallback
             
         except Exception as e:
             print(f"NLP generation failed: {e}")
@@ -4158,6 +4340,104 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
             
             analysis += "Note: This analysis is based on the document content shown above. For more specific details, please refer to the individual file contents."
         
+        # If analysis is still empty or None, provide a comprehensive fallback
+        if not analysis or len(analysis.strip()) == 0:
+            print("Creating comprehensive fallback analysis")
+            
+            # Create a detailed summary based on the actual content
+            analysis = f"# Multi-File Analysis Results\n\n"
+            analysis += f"**Query:** {req.query}\n"
+            analysis += f"**Files Analyzed:** {len(file_summaries)}\n"
+            analysis += f"**Total Content:** {len(combined_text):,} characters\n\n"
+            
+            # Analyze the query to provide relevant response
+            query_lower = req.query.lower()
+            
+            if 'summarize' in query_lower or 'summary' in query_lower:
+                analysis += "## Summary\n\n"
+                analysis += f"This analysis covers {len(file_summaries)} files containing diverse content:\n\n"
+                
+                for i, summary in enumerate(file_summaries, 1):
+                    file_type = summary['name'].split('.')[-1].upper() if '.' in summary['name'] else 'FILE'
+                    analysis += f"**{i}. {summary['name']}** ({file_type}, {summary['length']} chars)\n"
+                    
+                    # Show more meaningful and complete preview
+                    full_text = summary.get('full_text', summary.get('preview', ''))
+                    if full_text:
+                        # Extract key sentences or concepts
+                        sentences = full_text.split('.')
+                        key_content = []
+                        
+                        # Get first few meaningful sentences
+                        for sentence in sentences[:3]:
+                            sentence = sentence.strip()
+                            if len(sentence) > 10:  # Only meaningful sentences
+                                key_content.append(sentence)
+                        
+                        if key_content:
+                            content_preview = '. '.join(key_content)
+                            if len(content_preview) > 400:
+                                content_preview = content_preview[:400] + "..."
+                            else:
+                                content_preview += "."
+                        else:
+                            content_preview = full_text[:400] + ("..." if len(full_text) > 400 else "")
+                    else:
+                        content_preview = "No content available"
+                    
+                    analysis += f"   **Key Content:** {content_preview}\n\n"
+                
+                analysis += "### Key Insights:\n"
+                analysis += f"- **Content Volume:** {len(combined_text):,} total characters across all files\n"
+                analysis += f"- **File Diversity:** {len(set(s['name'].split('.')[-1] if '.' in s['name'] else 'unknown' for s in file_summaries))} different file formats\n"
+                analysis += f"- **Average Size:** {len(combined_text) // len(file_summaries):,} characters per file\n\n"
+                
+                # Try to extract some actual content insights
+                combined_lower = combined_text.lower()
+                if 'data structure' in combined_lower or 'algorithm' in combined_lower:
+                    analysis += "**Topic Focus:** The content appears to cover Data Structures and Algorithms (DSA) concepts.\n"
+                if 'research' in combined_lower or 'study' in combined_lower:
+                    analysis += "**Content Type:** Includes research or academic material.\n"
+                if len([s for s in file_summaries if s['name'].endswith('.pdf')]) > 0:
+                    analysis += "**Documents:** Contains PDF documents with structured content.\n"
+                if len([s for s in file_summaries if s['name'].endswith(('.jpg', '.png'))]) > 0:
+                    analysis += "**Images:** Includes image files with extracted text content.\n"
+                if len([s for s in file_summaries if s['name'].endswith(('.mp3', '.wav'))]) > 0:
+                    analysis += "**Audio:** Contains audio files with transcribed content.\n"
+                    
+            elif 'flashcard' in query_lower or 'flash card' in query_lower:
+                analysis += "## Flashcards\n\n"
+                analysis += "Based on the content from your files, here are study flashcards:\n\n"
+                
+                # Generate flashcards from the content
+                flashcards = generate_flashcards_from_content(combined_text, file_summaries)
+                for i, card in enumerate(flashcards, 1):
+                    analysis += f"### Card {i}\n"
+                    analysis += f"**Q:** {card['question']}\n"
+                    analysis += f"**A:** {card['answer']}\n\n"
+                    
+            else:
+                analysis += "## Analysis Results\n\n"
+                analysis += f"Based on your query '{req.query}', here's what was found in the {len(file_summaries)} files:\n\n"
+                
+                for i, summary in enumerate(file_summaries, 1):
+                    analysis += f"### File {i}: {summary['name']}\n"
+                    analysis += f"**Size:** {summary['length']} characters\n"
+                    # Show more meaningful preview
+                    preview = summary.get('preview', '')
+                    if len(preview) > 300:
+                        # Find a good breaking point
+                        break_point = preview.find('.', 250)
+                        if break_point == -1:
+                            break_point = preview.find(' ', 250)
+                        if break_point != -1:
+                            preview = preview[:break_point + 1]
+                        else:
+                            preview = preview[:300] + "..."
+                    analysis += f"**Content:** {preview}\n\n"
+            
+            analysis += "\n---\n*Note: This analysis was generated using basic text processing. For more advanced AI-powered insights, please ensure your Gemini API configuration is properly set up.*"
+        
         # Prepare response
         response = {
             "query": req.query,
@@ -4170,6 +4450,8 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
         }
         
         print(f"Multi-file analysis completed successfully for {len(all_texts)} files")
+        print(f"Analysis result length: {len(analysis) if analysis else 0}")
+        print(f"Analysis preview: {analysis[:200] if analysis else 'NO ANALYSIS'}")
         return response
         
     except HTTPException:

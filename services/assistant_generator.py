@@ -53,88 +53,265 @@ def clean_text_for_mermaid(text: str) -> str:
     return text
 
 def generate_flowchart_mermaid(text: str) -> str:
-    """Generate a proper Mermaid flowchart from text content"""
+    """Generate a proper Mermaid flowchart with decision diamonds and proper structure"""
     # Clean the input text first
     text = clean_text_for_mermaid(text)
+    all_content = text.lower()
     
-    # Try to extract meaningful structure from the content
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    nodes: List[str] = []
-    
-    # Look for structured content (headings, bullet points, etc.)
-    for line in lines[:10]:  # Limit to first 10 lines
-        # Skip very short lines
-        if len(line.split()) < 2:
-            continue
-        
-        # Clean and truncate the line for use as a node
-        clean_line = clean_text_for_mermaid(line)
-        
-        # Remove bullet points and numbering
-        clean_line = re.sub(r'^[\-\*\•\d\.\)]+\s*', '', clean_line)
-        
-        # Ensure reasonable length (20-40 chars is good for Mermaid)
-        if len(clean_line) > 40:
-            # Try to find a good breaking point
-            words = clean_line.split()
-            if len(words) > 4:
-                clean_line = ' '.join(words[:4]) + '...'
-            else:
-                clean_line = clean_line[:37] + '...'
-        
-        if len(clean_line) >= 3:  # Minimum meaningful length
-            nodes.append(clean_line)
-        
-        if len(nodes) >= 6:  # Limit number of nodes
-            break
-    
-    # If no good structure found, create a simple process flow
-    if len(nodes) < 2:
-        # Try to extract key concepts
-        words = text.split()
-        if 'trip' in text.lower() or 'travel' in text.lower():
-            nodes = ["Plan Trip", "Visit Destinations", "Complete Activities"]
-        elif 'notes' in text.lower() or 'todo' in text.lower():
-            nodes = ["Review Notes", "Complete Tasks", "Finish Goals"]
-        else:
-            nodes = ["Start", "Process Content", "Complete"]
-    
-    # Generate clean Mermaid syntax
+    # Detect content type and create appropriate flowchart
     mermaid = ["flowchart TD"]
     
-    for i, node in enumerate(nodes):
-        # Final cleaning for Mermaid
-        label = clean_text_for_mermaid(node)
+    # Travel/Trip flowchart
+    if any(word in all_content for word in ['trip', 'travel', 'visit', 'vacation', 'italy', 'rome', 'florence', 'venice', 'hotel', 'flight']):
+        # Extract cities or destinations from content
+        cities = []
+        if 'rome' in all_content:
+            cities.append('Rome')
+        if 'florence' in all_content:
+            cities.append('Florence') 
+        if 'venice' in all_content:
+            cities.append('Venice')
         
-        # Ensure label is not empty
-        if not label:
-            label = f"Step {i+1}"
+        if not cities:
+            # Generic travel flowchart
+            cities = ['Destination 1', 'Destination 2', 'Destination 3']
         
-        # Escape quotes in labels
-        label = label.replace('"', "'")
+        # Create travel itinerary flowchart
+        mermaid.extend([
+            '    A[Start Trip] --> B[Pack and Prepare]',
+            '    B --> C[Travel to First Destination]'
+        ])
         
-        # Add the node
-        mermaid.append(f'  A{i}["{label}"]')
+        # Add cities dynamically
+        prev_node = 'C'
+        for i, city in enumerate(cities):
+            current_node = chr(68 + i)  # D, E, F, etc.
+            next_node = chr(69 + i) if i < len(cities) - 1 else 'Z'
+            
+            mermaid.append(f'    {prev_node} --> {current_node}[Explore {city}]')
+            if i < len(cities) - 1:
+                mermaid.append(f'    {current_node} --> {next_node}[Travel to Next City]')
+                prev_node = next_node
+            else:
+                mermaid.append(f'    {current_node} --> Z[Return Home]')
+        
+        mermaid.append('    Z --> Y[End Trip]')
     
-    # Add connections
-    for i in range(len(nodes) - 1):
-        mermaid.append(f"  A{i} --> A{i+1}")
+    # Algorithm/Process flowchart
+    elif any(word in all_content for word in ['algorithm', 'process', 'step', 'method', 'procedure']):
+        if 'sort' in all_content or 'merge' in all_content:
+            # Sorting algorithm flowchart
+            mermaid.extend([
+                '    A[Start] --> B[Read input data]',
+                '    B --> C{Is data size less than 2?}',
+                '    C -->|Yes| D[Return data]',
+                '    C -->|No| E[Apply sorting algorithm]',
+                '    E --> F[Process elements]',
+                '    F --> G[Combine results]',
+                '    G --> H[Return sorted result]',
+                '    H --> I[End]'
+            ])
+        elif 'search' in all_content:
+            # Search algorithm flowchart
+            mermaid.extend([
+                '    A[Start] --> B[Initialize search]',
+                '    B --> C{Element found?}',
+                '    C -->|Yes| D[Return position]',
+                '    C -->|No| E{More elements?}',
+                '    E -->|Yes| F[Check next element]',
+                '    F --> C',
+                '    E -->|No| G[Return not found]',
+                '    D --> H[End]',
+                '    G --> H'
+            ])
+        else:
+            # Generic algorithm flowchart
+            mermaid.extend([
+                '    A[Start] --> B[Initialize variables]',
+                '    B --> C[Read input]',
+                '    C --> D{Condition met?}',
+                '    D -->|Yes| E[Execute main logic]',
+                '    D -->|No| F[Handle alternative]',
+                '    E --> G[Process result]',
+                '    F --> G',
+                '    G --> H[Output result]',
+                '    H --> I[End]'
+            ])
+    
+    # Data Structure flowchart
+    elif any(word in all_content for word in ['data structure', 'array', 'list', 'tree', 'stack', 'queue']):
+        mermaid.extend([
+            '    A[Start] --> B[Create data structure]',
+            '    B --> C[Initialize elements]',
+            '    C --> D{Operation type?}',
+            '    D -->|Insert| E[Add element]',
+            '    D -->|Delete| F[Remove element]',
+            '    D -->|Search| G[Find element]',
+            '    E --> H[Update structure]',
+            '    F --> H',
+            '    G --> I{Element found?}',
+            '    I -->|Yes| J[Return result]',
+            '    I -->|No| K[Return not found]',
+            '    H --> L[End]',
+            '    J --> L',
+            '    K --> L'
+        ])
+    
+    # Decision/Analysis flowchart
+    elif any(word in all_content for word in ['decision', 'analysis', 'evaluate', 'compare', 'choose']):
+        mermaid.extend([
+            '    A[Start] --> B[Gather information]',
+            '    B --> C[Analyze options]',
+            '    C --> D{Criteria met?}',
+            '    D -->|Yes| E[Select option A]',
+            '    D -->|No| F{Alternative available?}',
+            '    F -->|Yes| G[Select option B]',
+            '    F -->|No| H[Seek more options]',
+            '    E --> I[Implement decision]',
+            '    G --> I',
+            '    H --> C',
+            '    I --> J[End]'
+        ])
+    
+    # Learning/Study flowchart
+    elif any(word in all_content for word in ['learn', 'study', 'understand', 'practice', 'review']):
+        mermaid.extend([
+            '    A[Start Learning] --> B[Read material]',
+            '    B --> C[Take notes]',
+            '    C --> D{Understand concepts?}',
+            '    D -->|Yes| E[Practice exercises]',
+            '    D -->|No| F[Review material]',
+            '    F --> B',
+            '    E --> G{Need more practice?}',
+            '    G -->|Yes| E',
+            '    G -->|No| H[Test knowledge]',
+            '    H --> I[Complete learning]'
+        ])
+    
+    # Generic process flowchart (fallback)
+    else:
+        # Extract key steps from content - look for bullet points, numbered lists, etc.
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        steps = []
+        
+        # Look for structured content (bullet points, numbered items)
+        for line in lines:
+            clean_line = clean_text_for_mermaid(line)
+            
+            # Skip very short lines or headers
+            if len(clean_line) < 5:
+                continue
+                
+            # Remove bullet points, numbers, and other markers
+            clean_line = re.sub(r'^[\-\*\•\d\.\)\(\[\]]+\s*', '', clean_line)
+            
+            # Skip lines that are just dates or locations without actions
+            if re.match(r'^[A-Za-z\s]+\([A-Za-z\s\d\-–]+\)$', clean_line):
+                continue
+                
+            # Extract meaningful action items
+            if any(action_word in clean_line.lower() for action_word in ['visit', 'buy', 'book', 'reserve', 'climb', 'try', 'pick', 'send', 'stock', 'toss']):
+                if len(clean_line) > 40:
+                    # Find a good breaking point
+                    words = clean_line.split()
+                    if len(words) > 6:
+                        clean_line = ' '.join(words[:6]) + '...'
+                    else:
+                        clean_line = clean_line[:37] + '...'
+                
+                if len(clean_line) >= 5:
+                    steps.append(clean_line)
+                    
+            if len(steps) >= 6:  # Limit to 6 steps
+                break
+        
+        # If no meaningful steps found, create generic ones based on content type
+        if len(steps) < 2:
+            if 'notes' in all_content or 'todo' in all_content:
+                steps = ["Review notes and tasks", "Prioritize important items", "Complete planned activities"]
+            elif 'plan' in all_content or 'schedule' in all_content:
+                steps = ["Create detailed plan", "Prepare necessary items", "Execute planned activities"]
+            else:
+                steps = ["Begin process", "Execute main tasks", "Complete objectives"]
+        
+        # Build content-aware flowchart
+        mermaid.append('    A[Start] --> B[Preparation]')
+        
+        for i, step in enumerate(steps):
+            node_id = chr(67 + i)  # C, D, E, F, etc.
+            step_clean = step.replace('"', "'")
+            prev_node = 'B' if i == 0 else chr(66 + i)
+            mermaid.append(f'    {prev_node} --> {node_id}["{step_clean}"]')
+        
+        # Add completion
+        last_step_id = chr(66 + len(steps))
+        end_id = chr(67 + len(steps))
+        mermaid.append(f'    {last_step_id} --> {end_id}[Complete]')
     
     return "\n".join(mermaid)
 
 
 def generate_short_notes(text: str) -> str:
-    # ~1-page bullets
+    """Generate revision notes following the point-wise structure with sections"""
     chunks = _chunk_if_long(text)
-    notes: List[str] = []
-    for ch in chunks[:4]:
-        s = nlp.summarize_with_gemini(ch, max_tokens=220) or ch[:1000]
-        # Clean any emojis
-        s = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', s)
-        notes.append(s)
-        if len("\n\n".join(notes)) > 1200:
-            break
-    return "\n\n".join(f"- {p.strip()}" for p in notes if p.strip())
+    
+    # Extract key concepts and organize into sections
+    all_content = " ".join(chunks[:3])  # Use first 3 chunks for analysis
+    
+    # Generate structured notes
+    notes = ["# Revision Notes"]
+    
+    # Key Concepts section
+    notes.append("\n## Key Concepts")
+    key_concepts = nlp.summarize_with_gemini(all_content, max_tokens=200) or all_content[:800]
+    key_concepts = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', key_concepts)
+    
+    # Convert to bullet points (max 10-15 points)
+    concept_points = []
+    sentences = [s.strip() for s in key_concepts.split('.') if len(s.strip()) > 10]
+    for sentence in sentences[:8]:  # Max 8 key concepts
+        if sentence:
+            concept_points.append(f"* {sentence.strip()}.")
+    
+    if not concept_points:
+        concept_points = [f"* {all_content[:100]}..."]
+    
+    notes.extend(concept_points)
+    
+    # Definitions section (if applicable)
+    if any(word in text.lower() for word in ['definition', 'define', 'means', 'is a', 'refers to']):
+        notes.append("\n## Definitions")
+        # Extract definition-like content
+        definition_content = nlp.summarize_with_gemini(f"Extract definitions from: {all_content}", max_tokens=150) or ""
+        definition_content = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', definition_content)
+        
+        def_sentences = [s.strip() for s in definition_content.split('.') if len(s.strip()) > 10]
+        for sentence in def_sentences[:5]:  # Max 5 definitions
+            if sentence:
+                notes.append(f"* {sentence.strip()}.")
+    
+    # Examples section (if applicable)
+    if any(word in text.lower() for word in ['example', 'instance', 'case', 'such as']):
+        notes.append("\n## Examples")
+        example_content = nlp.summarize_with_gemini(f"Extract examples from: {all_content}", max_tokens=120) or ""
+        example_content = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', example_content)
+        
+        example_sentences = [s.strip() for s in example_content.split('.') if len(s.strip()) > 10]
+        for sentence in example_sentences[:4]:  # Max 4 examples
+            if sentence:
+                notes.append(f"* {sentence.strip()}.")
+    
+    # Important Points section
+    notes.append("\n## Important Points")
+    important_content = nlp.summarize_with_gemini(f"Extract most important points from: {all_content}", max_tokens=180) or all_content[:600]
+    important_content = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', important_content)
+    
+    important_sentences = [s.strip() for s in important_content.split('.') if len(s.strip()) > 10]
+    for sentence in important_sentences[:6]:  # Max 6 important points
+        if sentence:
+            notes.append(f"* {sentence.strip()}.")
+    
+    return "\n".join(notes)
 
 
 def generate_detailed_notes(text: str) -> str:
@@ -158,13 +335,115 @@ def generate_detailed_notes(text: str) -> str:
 
 
 def generate_timeline(text: str) -> str:
-    # Simplified: extract likely chronological bullets
-    base = nlp.summarize_with_gemini(text, max_tokens=300) or text[:1500]
-    base = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', base)
-    lines = [l.strip(" -\t") for l in base.split("\n") if len(l.split()) >= 3]
-    lines = lines[:12]
-    # Represent as markdown timeline
-    return "\n".join(f"- [Step {i+1}] {l}" for i, l in enumerate(lines))
+    """Generate a timeline with 5-7 chronological milestones or logical steps"""
+    chunks = _chunk_if_long(text)
+    all_content = " ".join(chunks[:3])
+    
+    # Generate timeline-focused summary
+    timeline_content = nlp.summarize_with_gemini(f"Extract chronological steps or progression from: {all_content}", max_tokens=250) or all_content[:1000]
+    timeline_content = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', timeline_content)
+    
+    # Create timeline structure
+    timeline = ["# Timeline"]
+    
+    # Detect content type and create appropriate timeline
+    content_lower = all_content.lower()
+    
+    if any(word in content_lower for word in ['history', 'evolution', 'development', 'progress']):
+        # Historical/Evolution timeline
+        timeline.append("\n## Historical Development")
+        
+        # Extract key periods or developments
+        sentences = [s.strip() for s in timeline_content.split('.') if len(s.strip()) > 15]
+        milestones = []
+        
+        for i, sentence in enumerate(sentences[:7]):
+            if sentence:
+                # Try to extract year/date if present
+                year_match = re.search(r'\b(19|20)\d{2}\b', sentence)
+                if year_match:
+                    year = year_match.group()
+                    milestone_text = sentence.replace(year, '').strip()
+                    milestones.append(f"**{year}** – {milestone_text}")
+                else:
+                    milestones.append(f"**Stage {i+1}** – {sentence}")
+        
+        if not milestones:
+            milestones = [
+                "**Early Stage** – Initial concepts and foundations",
+                "**Development** – Key innovations and improvements", 
+                "**Maturation** – Widespread adoption and refinement",
+                "**Modern Era** – Current applications and future directions"
+            ]
+    
+    elif any(word in content_lower for word in ['algorithm', 'process', 'method', 'procedure']):
+        # Process/Algorithm timeline
+        timeline.append("\n## Process Steps")
+        
+        # Extract process steps
+        process_summary = nlp.summarize_with_gemini(f"List the main steps in order from: {all_content}", max_tokens=200) or ""
+        process_summary = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', process_summary)
+        
+        steps = [s.strip() for s in process_summary.split('.') if len(s.strip()) > 10]
+        milestones = []
+        
+        for i, step in enumerate(steps[:6]):
+            if step:
+                milestones.append(f"**Step {i+1}** – {step}")
+        
+        if not milestones:
+            milestones = [
+                "**Step 1 – Initialization** – Set up initial conditions and variables",
+                "**Step 2 – Input Processing** – Read and validate input data",
+                "**Step 3 – Main Algorithm** – Execute core processing logic",
+                "**Step 4 – Result Generation** – Compute and format results",
+                "**Step 5 – Output** – Return or display final results"
+            ]
+    
+    elif any(word in content_lower for word in ['learn', 'study', 'education', 'course']):
+        # Learning/Study timeline
+        timeline.append("\n## Learning Progression")
+        
+        learning_steps = [
+            "**Foundation** – Understanding basic concepts and terminology",
+            "**Core Learning** – Mastering fundamental principles and methods", 
+            "**Application** – Practicing with examples and exercises",
+            "**Integration** – Connecting concepts with broader knowledge",
+            "**Mastery** – Achieving proficiency and problem-solving ability",
+            "**Advanced Topics** – Exploring complex applications and extensions"
+        ]
+        milestones = learning_steps[:6]
+    
+    else:
+        # Generic timeline based on content structure
+        timeline.append("\n## Key Milestones")
+        
+        # Extract key points and organize chronologically
+        key_points = [s.strip() for s in timeline_content.split('.') if len(s.strip()) > 15]
+        milestones = []
+        
+        for i, point in enumerate(key_points[:7]):
+            if point:
+                milestones.append(f"**Milestone {i+1}** – {point}")
+        
+        # Ensure we have at least 5 milestones
+        while len(milestones) < 5:
+            milestone_num = len(milestones) + 1
+            if milestone_num == 1:
+                milestones.append("**Beginning** – Initial setup and preparation")
+            elif milestone_num == 2:
+                milestones.append("**Development** – Core implementation and progress")
+            elif milestone_num == 3:
+                milestones.append("**Refinement** – Improvements and optimization")
+            elif milestone_num == 4:
+                milestones.append("**Integration** – Combining components and testing")
+            else:
+                milestones.append("**Completion** – Final results and conclusions")
+    
+    # Add milestones to timeline (ensure 5-7 items)
+    timeline.extend(milestones[:7])
+    
+    return "\n".join(timeline)
 
 
 def generate_key_insights(text: str) -> str:
@@ -176,64 +455,126 @@ def generate_key_insights(text: str) -> str:
 
 
 def generate_flashcards(text: str) -> List[Tuple[str, str]]:
-    # Generate exactly 3 meaningful Q&A pairs
+    """Generate 3-5 flashcards with mixed question types (definition, concept, application)"""
     chunks = _chunk_if_long(text)
     cards: List[Tuple[str, str]] = []
+    all_content = " ".join(chunks[:3])
     
-    # Try to generate specific questions from content
-    for i, chunk in enumerate(chunks[:3]):
-        summary = nlp.summarize_with_gemini(chunk, max_tokens=200) or chunk[:800]
-        summary = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', summary)
-        
-        # Generate different types of questions
-        if i == 0:
-            question = "What is the main topic or purpose of this content?"
-            answer = summary.split('.')[0] + '.' if '.' in summary else summary[:100]
-        elif i == 1:
-            question = "What are the key points or methods discussed?"
-            # Extract key points
-            sentences = [s.strip() for s in summary.split('.') if len(s.strip()) > 10]
-            answer = sentences[0] + '.' if sentences else summary[:100]
+    # Generate content-aware summary for better Q&A
+    content_summary = nlp.summarize_with_gemini(all_content, max_tokens=300) or all_content[:1000]
+    content_summary = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', content_summary)
+    
+    # Card 1: Definition type question
+    if any(word in text.lower() for word in ['data structure', 'algorithm', 'definition', 'what is', 'means']):
+        if 'data structure' in text.lower():
+            cards.append((
+                "What is a Data Structure?",
+                "A way of organizing and storing data for efficient access and modification."
+            ))
+        elif 'algorithm' in text.lower():
+            cards.append((
+                "What is an Algorithm?", 
+                "A step-by-step procedure for solving problems and performing operations efficiently."
+            ))
         else:
-            question = "What conclusions or insights can be drawn?"
-            # Get last meaningful sentence
-            sentences = [s.strip() for s in summary.split('.') if len(s.strip()) > 10]
-            answer = sentences[-1] + '.' if sentences else summary[:100]
-        
-        if len(answer.split()) >= 3:
-            cards.append((question, answer))
+            # Extract first definition-like sentence
+            sentences = [s.strip() for s in content_summary.split('.') if len(s.strip()) > 15]
+            if sentences:
+                cards.append((
+                    "What is the main concept discussed?",
+                    sentences[0] + "."
+                ))
     
-    # Ensure we have exactly 3 cards
+    # Card 2: Concept/Key points question
+    concept_summary = nlp.summarize_with_gemini(f"What are the key concepts in: {all_content}", max_tokens=150) or ""
+    concept_summary = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', concept_summary)
+    
+    if concept_summary:
+        key_points = [s.strip() for s in concept_summary.split('.') if len(s.strip()) > 10]
+        if key_points:
+            cards.append((
+                "What are the key points or main ideas?",
+                key_points[0] + "." if key_points[0] else "Key concepts and important principles."
+            ))
+    
+    # Card 3: Application question
+    if any(word in text.lower() for word in ['use', 'application', 'example', 'how', 'why']):
+        app_summary = nlp.summarize_with_gemini(f"How is this used or applied: {all_content}", max_tokens=120) or ""
+        app_summary = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', app_summary)
+        
+        if app_summary:
+            app_sentences = [s.strip() for s in app_summary.split('.') if len(s.strip()) > 10]
+            if app_sentences:
+                cards.append((
+                    "How is this concept used or applied?",
+                    app_sentences[0] + "."
+                ))
+    
+    # Card 4: Importance/Why question
+    if len(cards) < 4:
+        importance_summary = nlp.summarize_with_gemini(f"Why is this important: {all_content}", max_tokens=100) or ""
+        importance_summary = re.sub(r'[^\w\s\-.,;:()\[\]{}!?\'"\n]', '', importance_summary)
+        
+        if importance_summary:
+            imp_sentences = [s.strip() for s in importance_summary.split('.') if len(s.strip()) > 10]
+            if imp_sentences:
+                cards.append((
+                    "Why is this concept important?",
+                    imp_sentences[0] + "."
+                ))
+    
+    # Card 5: Context/Background question (if we have enough content)
+    if len(cards) < 5 and len(chunks) > 2:
+        context_sentences = [s.strip() for s in content_summary.split('.') if len(s.strip()) > 15]
+        if len(context_sentences) > 2:
+            cards.append((
+                "What background or context is important to understand?",
+                context_sentences[-1] + "."
+            ))
+    
+    # Ensure we have at least 3 cards with fallbacks
     while len(cards) < 3:
         if len(cards) == 0:
-            cards.append(("What is this content about?", text[:200] + "..."))
+            cards.append((
+                "What is the main topic of this content?",
+                content_summary[:150] + "..." if len(content_summary) > 150 else content_summary
+            ))
         elif len(cards) == 1:
-            cards.append(("What are the important details?", text[200:400] + "..."))
+            cards.append((
+                "What are the important details mentioned?",
+                all_content[200:350] + "..." if len(all_content) > 350 else all_content[200:]
+            ))
         else:
-            cards.append(("What should you remember?", "Key takeaways from the content."))
+            cards.append((
+                "What should you remember from this content?",
+                "Key takeaways and important concepts for understanding the topic."
+            ))
     
-    return cards[:3]  # Ensure exactly 3 cards
+    # Return 3-5 cards (prefer 4-5 if we have good content)
+    return cards[:5]
 
 
 def render_markdown(kind: str, content) -> str:
     if kind == "flashcards":
-        lines = ["## Q&A Flashcards"]
+        lines = ["# Flashcards"]
         for i, (q, a) in enumerate(content, 1):
-            lines.append(f"\n### Q{i}: {q}\nA{i}: {a}")
+            lines.append(f"\n**Flashcard {i}**")
+            lines.append(f"* Q: {q}")
+            lines.append(f"* A: {a}")
         return "\n".join(lines)
     if kind == "flowchart":
-        return f"## Flowchart (Mermaid)\n\n```mermaid\n{content}\n```"
+        return f"# Flowchart\n\n```mermaid\n{content}\n```"
     return str(content)
 
 
 def create_simple_flowchart() -> str:
     """Create a simple, guaranteed valid Mermaid flowchart"""
     return """flowchart TD
-  A0[Start]
-  A1[Process]
-  A2[End]
-  A0 --> A1
-  A1 --> A2"""
+    A0[Start]
+    A1[Process]
+    A2[End]
+    A0 --> A1
+    A1 --> A2"""
 
 def mermaid_to_image(mermaid_code: str) -> bytes:
     """Convert Mermaid code to PNG image using Mermaid.ink API"""
@@ -244,25 +585,35 @@ def mermaid_to_image(mermaid_code: str) -> bytes:
         # Validate and clean the Mermaid code first
         lines = [line.strip() for line in mermaid_code.strip().split('\n') if line.strip()]
         
-        # Ensure it starts with flowchart
-        if not lines[0].startswith('flowchart'):
+        # Ensure it starts with flowchart and has content
+        if not lines or not lines[0].startswith('flowchart'):
             print("DEBUG: Invalid Mermaid syntax - missing flowchart declaration")
             mermaid_code = create_simple_flowchart()
+            lines = [line.strip() for line in mermaid_code.strip().split('\n') if line.strip()]
         
         # Check for basic syntax issues
         if len(lines) < 3:  # Need at least flowchart declaration + 1 node + 1 connection
             print("DEBUG: Mermaid code too short, using simple fallback")
             mermaid_code = create_simple_flowchart()
         
+        # Clean up the mermaid code - remove any extra backticks or formatting
+        mermaid_code = mermaid_code.strip()
+        if mermaid_code.startswith('```mermaid'):
+            mermaid_code = mermaid_code.replace('```mermaid', '').replace('```', '').strip()
+        
+        print(f"DEBUG: Cleaned Mermaid code: {mermaid_code}")
+        
         # First try with the provided code
-        import urllib.parse
-        encoded = urllib.parse.quote(mermaid_code.encode('utf-8'))
+        import base64
+        
+        # FIX: Mermaid.ink expects base64-url encoded string, not quote()
+        encoded = base64.urlsafe_b64encode(mermaid_code.encode("utf-8")).decode("utf-8")
         
         # Use Mermaid.ink API to generate image
         url = f"https://mermaid.ink/img/{encoded}"
-        print(f"DEBUG: Mermaid.ink URL: {url}")
+        print(f"DEBUG: Final Mermaid.ink URL: {url}")
         
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=15)
         print(f"DEBUG: Response status: {response.status_code}")
         
         if response.status_code == 200:
@@ -272,19 +623,19 @@ def mermaid_to_image(mermaid_code: str) -> bytes:
             print(f"DEBUG: Mermaid.ink failed with original code, trying simple fallback")
             # Try with simple flowchart
             simple_code = create_simple_flowchart()
-            encoded_simple = urllib.parse.quote(simple_code.encode('utf-8'))
+            encoded_simple = base64.urlsafe_b64encode(simple_code.encode("utf-8")).decode("utf-8")
             url_simple = f"https://mermaid.ink/img/{encoded_simple}"
             
-            response_simple = requests.get(url_simple, timeout=10)
+            response_simple = requests.get(url_simple, timeout=15)
             if response_simple.status_code == 200:
                 print("DEBUG: Successfully generated simple flowchart image")
                 return response_simple.content
             else:
-                print(f"DEBUG: Even simple flowchart failed, using text image")
-                return create_text_image(mermaid_code)
+                print(f"DEBUG: Even simple flowchart failed, creating text fallback")
+                return create_text_image("Flowchart generation failed")
     except Exception as e:
         print(f"DEBUG: Exception in mermaid_to_image: {e}")
-        return create_text_image(mermaid_code)
+        return create_text_image(f"Error: {str(e)}")
 
 def create_text_image(text: str) -> bytes:
     """Create a simple text-based image as fallback"""

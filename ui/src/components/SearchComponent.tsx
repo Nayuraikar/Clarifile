@@ -103,13 +103,15 @@ const SearchComponent: React.FC = () => {
         });
       } else {
         // Handle text search
-        response = await fetch('http://localhost:4000/api/search', {
+        response = await fetch('http://localhost:4000/search_files', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             query,
-            file_type: selectedFileType === 'all' ? null : selectedFileType,
-            limit: 50,
+            use_semantic: true,
+            semantic_weight: 0.7,
+            min_score: 0.2,
+            top_k: 50,
           }),
         });
       }
@@ -118,11 +120,24 @@ const SearchComponent: React.FC = () => {
         throw new Error(`Search failed: ${response.statusText}`);
       }
       
-      const data: SearchResponse = await response.json();
-      setResults(data.results || []);
+      const data = await response.json();
+      // Transform the new API response to match the expected format
+      const transformedResults = (data.files || []).map((file: any) => ({
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.size,
+        modifiedTime: file.modifiedTime,
+        score: file.match_score || file.confidence / 100 || 0,
+        match_type: file.match_type || 'semantic',
+        context: file.context || '',
+        drive_url: file.drive_url || `https://drive.google.com/file/d/${file.id}/view`
+      }));
+      
+      setResults(transformedResults);
       setSearchStats({
-        total: data.total_matches || 0,
-        shown: (data.results || []).length,
+        total: data.total_searched || 0,
+        shown: data.matches_found || 0,
       });
       
     } catch (error) {
@@ -295,7 +310,7 @@ const SearchComponent: React.FC = () => {
             onChange={handleInputChange}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder={isVisualSearch ? "Searching similar images..." : "Search documents, PDFs, presentations, and more..."}
+            placeholder={isVisualSearch ? "Searching similar images..." : "Search documents, PDFs, presentations, images, audio, and more..."}
             className={`w-full pl-12 pr-16 py-4 text-lg text-[#2d2416] bg-transparent border-none focus:ring-0 focus:outline-none placeholder-[#8b7355] ${
               isVisualSearch ? 'opacity-70' : ''
             }`}
@@ -563,13 +578,13 @@ const SearchComponent: React.FC = () => {
             </div>
             <h3 className="text-2xl font-medium text-gray-900 mb-2">Search your files</h3>
             <p className="text-gray-500 max-w-lg mx-auto mb-8">
-              Use natural language to find documents, images, and files across your Google Drive.
+              Use natural language to find documents, images, audio files, and more across your Google Drive.
             </p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
               {[
                 { icon: <FileText className="w-5 h-5" />, text: 'Search by content, not just filenames' },
-                { icon: <ImageIcon className="w-5 h-5" />, text: 'Find similar images with visual search' },
+                { icon: <ImageIcon className="w-5 h-5" />, text: 'Search images with OCR and audio with transcription' },
                 { icon: <Sparkles className="w-5 h-5" />, text: 'AI-powered semantic understanding' },
                 { icon: <Code className="w-5 h-5" />, text: 'Filter by file type, date, and more' },
               ].map((item, index) => (

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import DuplicateResolution from './DuplicateResolution'
 
 const BASE = 'http://127.0.0.1:4000'
@@ -147,6 +147,7 @@ export default function App() {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([])
   const [multiFileQuery, setMultiFileQuery] = useState<string>('')
   const [multiFileOutputType, setMultiFileOutputType] = useState<string>('detailed')
+  const [multiFileFormat, setMultiFileFormat] = useState<string>('')
   const [quickActionLoading, setQuickActionLoading] = useState(false)
   const [duplicateResolution, setDuplicateResolution] = useState<{ [key: string]: boolean }>({})
   const [duplicateResolutionLoading, setDuplicateResolutionLoading] = useState(false)
@@ -2248,8 +2249,26 @@ export default function App() {
                       <option value="flowchart">Flowchart</option>
                       <option value="timeline">Timeline</option>
                       <option value="short_notes">Short Notes</option>
+                      <option value="key_insights">Key Insights</option>
+                      <option value="flashcards">Flashcards</option>
                     </select>
                   </div>
+                  {['flowchart', 'flashcards', 'key_insights', 'timeline', 'short_notes'].includes(multiFileOutputType) && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Download Format (Optional):</label>
+                      <select
+                        value={multiFileFormat}
+                        onChange={(e) => setMultiFileFormat(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Display Only</option>
+                        <option value="md">Markdown (.md)</option>
+                        <option value="txt">Text (.txt)</option>
+                        <option value="docx">Word Document (.docx)</option>
+                        <option value="pdf">PDF (.pdf)</option>
+                      </select>
+                    </div>
+                  )}
                   <div className="text-sm text-gray-600">
                     Selected files: {selectedFiles.length} / {driveProps.length}
                   </div>
@@ -2351,13 +2370,19 @@ export default function App() {
                         body: JSON.stringify({
                           files: selectedFileObjects,
                           query: multiFileQuery,
-                          output_type: multiFileOutputType
+                          output_type: multiFileOutputType,
+                          format: multiFileFormat || undefined
                         })
                       })
                       
                       // Create a combined chat for multi-file analysis
                       const multiFileId = `multi_${Date.now()}`
-                      const analysisContent = `**Multi-File Analysis Results**\n\n**Query:** ${multiFileQuery}\n**Output Type:** ${multiFileOutputType}\n**Files Analyzed:** ${selectedFiles.length}\n\n**Analysis:**\n\n${response.analysis}`
+                      let analysisContent = `**Multi-File Analysis Results**\n\n**Query:** ${multiFileQuery}\n**Output Type:** ${multiFileOutputType}\n**Files Analyzed:** ${selectedFiles.length}\n\n**Analysis:**\n\n${response.analysis}`
+                      
+                      // Add download info if assistant data is available
+                      if (response.assistant && response.assistant.type === 'download') {
+                        analysisContent += `\n\n**📥 Downloadable ${response.assistant.kind.replace('_', ' ')} available as ${response.assistant.filename}**`
+                      }
                       
                       // Create a dummy file object for the multi-file chat with original files stored
                       const multiFileObject = {
@@ -2376,7 +2401,7 @@ export default function App() {
                           file: multiFileObject,
                           originalFiles: selectedFileObjects, // Store original files for follow-up questions
                           messages: [
-                            { role: 'assistant', content: analysisContent }
+                            { role: 'assistant', content: analysisContent, assistant: response.assistant }
                           ]
                         }
                       }))
