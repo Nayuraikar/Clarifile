@@ -151,7 +151,7 @@ umap-learn==0.5.9.post2
 uritemplate==4.2.0
 urllib3==2.5.0
 uvicorn==0.37.0
-uvloop==0.21.0
+uvloop==0.21.0;sys_platform != "win32"
 wasabi==1.1.3
 watchfiles==1.1.0
 weasel==0.4.1

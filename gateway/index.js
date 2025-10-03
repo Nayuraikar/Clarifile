@@ -21,9 +21,9 @@ let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = '36164233493xxxxxxx'; 
-const CLIENT_SECRET = 'GOCSPX-xxxxxxxx';                         
-const REDIRECT_URI = 'https://jxxxxxxxxg/';
+const CLIENT_ID = '901002840369-9m5hr6ds4aqs5o2f2laii829e9erhokp.apps.googleusercontent.com'; 
+const CLIENT_SECRET = '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';                         
+const REDIRECT_URI = 'https://neepjoabiciilinlopdkpkdifikblaei.chromiumapp.org/';
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
@@ -658,11 +658,21 @@ app.post('/drive/analyze', async (req, res) => {
       
       if (detectedKind) {
         try {
+          // Default format based on kind if not specified
+          let finalFormat = detectedFormat;
+          if (!finalFormat) {
+            if (detectedKind === 'flowchart') {
+              finalFormat = 'png'; // Flowcharts should default to PNG
+            } else {
+              finalFormat = 'txt';
+            }
+          }
+          
           // Call the assistant generator
           const assistantBody = {
             kind: detectedKind,
             file: req.body.file,
-            format: detectedFormat || 'txt',
+            format: finalFormat,
             auth_token: body.auth_token
           };
           
@@ -671,7 +681,7 @@ app.post('/drive/analyze', async (req, res) => {
           if (assistantResponse.data) {
             // Enhance the response with assistant data
             r.data.assistant = {
-              type: detectedFormat ? 'download' : 'display',
+              type: finalFormat && finalFormat !== 'txt' ? 'download' : 'display',
               kind: assistantResponse.data.kind,
               filename: assistantResponse.data.filename,
               base64: assistantResponse.data.base64,
@@ -679,10 +689,18 @@ app.post('/drive/analyze', async (req, res) => {
               content: assistantResponse.data.content
             };
             
+            console.log('Gateway: Enhanced response with assistant data:', {
+              type: r.data.assistant.type,
+              kind: r.data.assistant.kind,
+              filename: r.data.assistant.filename,
+              hasBase64: !!r.data.assistant.base64,
+              mime: r.data.assistant.mime
+            });
+            
             // Update the answer
-            if (detectedFormat) {
+            if (finalFormat && finalFormat !== 'txt') {
               r.data.qa = r.data.qa || {};
-              r.data.qa.answer = `I've generated your ${detectedKind.replace('_', ' ')} as a downloadable ${detectedFormat.toUpperCase()} file.`;
+              r.data.qa.answer = `I've generated your ${detectedKind.replace('_', ' ')} as a downloadable ${finalFormat.toUpperCase()} file.`;
             } else {
               // Format content for display
               let formattedContent = assistantResponse.data.content;
@@ -773,14 +791,19 @@ app.post('/drive/extract_insights', async (req, res) => {
 // Search files in Drive by content
 app.post('/search_files', async (req, res) => {
   try {
-    if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    // Use auth token from query parameter or fallback to stored DRIVE_TOKEN
+    const authToken = req.query.auth_token || DRIVE_TOKEN;
+    if (!authToken) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    
     const query = req.body?.query;
     if (!query) return res.status(400).json({ error: 'missing search query' });
     
-    const r = await axios.post(`${PARSER}/search_files?auth_token=${encodeURIComponent(DRIVE_TOKEN)}`, req.body);
+    console.log('Gateway: Forwarding search request to parser with query:', query);
+    const r = await axios.post(`${PARSER}/search_files?auth_token=${encodeURIComponent(authToken)}`, req.body);
+    console.log('Gateway: Received response from parser:', r.data);
     res.json(r.data);
   } catch (e) { 
-    console.error('Search error:', e.response?.data || e.message);
+    console.error('Gateway search error:', e.response?.data || e.message);
     res.status(500).json({ error: e.response?.data?.detail || e.toString() }); 
   }
 });

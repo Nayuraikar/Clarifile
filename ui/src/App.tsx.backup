@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import DuplicateResolution from './DuplicateResolution'
-import SearchFiles from './components/SearchFiles'
 import './textCleaner.js'
 
 const BASE = 'http://127.0.0.1:4000'
@@ -64,6 +63,12 @@ interface DriveProposal {
   parents?: string[];
 }
 
+interface ChatData {
+  file: DriveProposal;
+  messages: { role: 'user'|'assistant', content: string, assistant?: any }[];
+  originalFiles?: DriveProposal[];  // For multi-file chats
+}
+
 function Section({ children }: { children: React.ReactNode }) {
   return <div className="max-w-7xl mx-auto px-6 py-12">{children}</div>
 }
@@ -101,174 +106,29 @@ export default function App() {
   const [customLabels, setCustomLabels] = useState<Record<string, string>>({})
   const [analyzingFile, setAnalyzingFile] = useState<string | null>(null)
 
-  // Helper function to download files - using your proven implementation
+  // Helper function to download files
   const downloadFile = (filename: string, base64Data: string, mimeType: string) => {
-    console.log('downloadFile called with:', { filename, mimeType, base64Length: base64Data?.length });
     try {
-      if (!base64Data) {
-        throw new Error('No base64 data provided');
+      const byteCharacters = atob(base64Data)
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
       }
+      const byteArray = new Uint8Array(byteNumbers)
+      const blob = new Blob([byteArray], { type: mimeType })
       
-      // Use your proven download implementation
-      const b = atob(base64Data);
-      const bytes = new Uint8Array(b.length);
-      for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i);
-      const blob = new Blob([bytes], { type: mimeType || "application/octet-stream" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename || "output.md";
-      a.click();
-      URL.revokeObjectURL(a.href);
-      
-      console.log('Download completed successfully');
-      setNotification(`Downloaded ${filename} successfully!`)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Download failed:', error)
-      setNotification(`Download failed: ${error.message}. Please try again.`)
+      setNotification('Download failed. Please try again.')
     }
-  }
-
-  // Alternative download function using your response format
-  const downloadFromResponse = (r: { filename: string; mime: string; base64: string }) => {
-    console.log('downloadFromResponse called with:', { filename: r.filename, mime: r.mime, hasBase64: !!r.base64 });
-    try {
-      const b = atob(r.base64);
-      const bytes = new Uint8Array(b.length);
-      for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i);
-      const blob = new Blob([bytes], { type: r.mime || "application/octet-stream" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = r.filename || "output.md";
-      a.click();
-      URL.revokeObjectURL(a.href);
-      
-      console.log('Download from response completed successfully');
-      setNotification(`Downloaded ${r.filename} successfully!`)
-    } catch (error) {
-      console.error('Download from response failed:', error)
-      setNotification(`Download failed: ${error.message}. Please try again.`)
-    }
-  }
-
-  // Enhanced download functionality
-  const DownloadButton = ({ message, className = '' }: { message: ChatMessage, className?: string }) => {
-    if (message.role !== 'assistant' || !message.assistant || message.assistant.type !== 'download') {
-      return null;
-    }
-
-    const { kind, filename, data, base64, mime } = message.assistant;
-    const downloadData = data || base64;
-    const messageId = message.id || `${Date.now()}`;
-    const isLoading = downloads[messageId];
-
-    const handleDownload = () => {
-      if (!downloadData) {
-        console.error('No download data available');
-        setNotification('No download data available');
-        return;
-      }
-
-      try {
-        // Decode base64 data
-        const byteCharacters = atob(downloadData);
-        const byteNumbers = new Array(byteCharacters.length);
-        
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        
-        const byteArray = new Uint8Array(byteNumbers);
-        const mimeType = mime || `application/${kind}` || 'application/octet-stream';
-        const blob = new Blob([byteArray], { type: mimeType });
-        
-        // Create download link
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename || `download.${kind}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        
-        setNotification(`Downloaded ${filename || 'file'} successfully!`);
-      } catch (error) {
-        console.error('Download failed:', error);
-        setNotification('Download failed. Please try again.');
-      }
-    };
-
-    // Get appropriate icon based on file type
-    const getFileIcon = () => {
-      switch (kind) {
-        case 'pdf':
-          return <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"/></svg>;
-        case 'docx':
-          return <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"/></svg>;
-        case 'png':
-        case 'jpg':
-          return <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>;
-        default:
-          return <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6"/></svg>;
-      }
-    };
-
-    return (
-      <button
-        onClick={handleDownload}
-        disabled={isLoading}
-        className={`text-sm text-white px-3 py-1.5 rounded-lg transition-colors shadow-sm ${
-          isLoading ? 'opacity-50 cursor-not-allowed' : ''
-        } ${className}`}
-        style={{ backgroundColor: isLoading ? 'rgb(180, 180, 180)' : 'rgb(139, 115, 85)' }}
-        onMouseEnter={(e) => {
-          if (!isLoading) {
-            e.currentTarget.style.backgroundColor = 'rgb(120, 100, 75)';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!isLoading) {
-            e.currentTarget.style.backgroundColor = 'rgb(139, 115, 85)';
-          }
-        }}
-        title={`Download as ${(kind || 'file').toUpperCase()}`}
-      >
-        {isLoading ? (
-          <>
-            <div className="w-4 h-4 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin"></div>
-            <span>Preparing...</span>
-          </>
-        ) : (
-          <>
-            {getFileIcon()}
-            <span>Download {(kind || 'file').toUpperCase()}</span>
-          </>
-        )}
-      </button>
-    );
-  };
-
-
-
-  // Your assistantGenerate function - using correct endpoint
-  const assistantGenerate = async (req: {
-    kind: "flowchart" | "short_notes" | "detailed_notes" | "timeline" | "key_insights" | "flashcards";
-    text?: string;
-    file?: { id: string; name?: string };
-    format?: "md" | "txt" | "docx" | "pdf" | "png";
-    auth_token?: string;
-  }) => {
-    console.log('assistantGenerate called with:', req);
-    // Use the correct endpoint that your gateway provides
-    const res = await fetch("http://127.0.0.1:4000/api/assistant_generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req),
-    });
-    if (!res.ok) {
-      throw new Error(await res.text());
-    }
-    return (await res.json()) as { kind: string; filename: string; mime: string; base64: string; content: any };
   }
 
   // Helper function to send study requests
@@ -284,34 +144,9 @@ export default function App() {
     }, 100)
   }
   const [notification, setNotification] = useState<string | null>(null)
-  
-  // Enhanced chat types and state
-  interface ChatMessage {
-    id?: string;
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp?: string;
-    assistant?: {
-      type: 'download' | 'analysis' | 'summary' | 'display';
-      kind?: 'pdf' | 'docx' | 'text' | 'png' | 'jpg' | 'txt';
-      filename?: string;
-      data?: string; // Base64 encoded file data
-      base64?: string; // Alternative base64 field
-      mime?: string;
-    };
-  }
-
-  interface Chat {
-    id: string;
-    file: DriveProposal;
-    messages: ChatMessage[];
-    originalFiles?: any[]; // For multi-file chats
-  }
-
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [chats, setChats] = useState<Record<string, Chat>>({})
+  const [messages, setMessages] = useState<{ role: 'user'|'assistant', content: string, assistant?: any }[]>([])
+  const [chats, setChats] = useState<Record<string, ChatData>>({})
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null)
-  const [downloads, setDownloads] = useState<Record<string, boolean>>({})
   const [loadingStates, setLoadingStates] = useState<{[key: string]: boolean}>({})
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null)
   const [showDocumentSelector, setShowDocumentSelector] = useState(false)
@@ -568,6 +403,16 @@ export default function App() {
     }
   }, [notification])
 
+  // Preserve search results when switching tabs - don't clear them
+  useEffect(() => {
+    // This effect intentionally does nothing - it's here to document
+    // that search results should persist across tab switches
+    // The search results will only be cleared when:
+    // 1. User clicks "Clear" button
+    // 2. User performs a new search
+    // 3. Page is refreshed
+  }, [tab])
+
   // Reset quick action loading state when driveProps changes
   useEffect(() => {
     if (quickActionLoading && driveProps.length === 0) {
@@ -591,7 +436,6 @@ export default function App() {
     // Add typing indicator into chat
     appendToChat(selectedChatId, { role: 'assistant', content: '::typing::' })
     const replaceTypingWith = (text: string, assistantData?: any) => {
-      console.log('replaceTypingWith called with:', { text: text.substring(0, 100) + '...', assistantData });
       setChats(prev => {
         const chat = prev[selectedChatId!]
         if (!chat) return prev
@@ -601,7 +445,6 @@ export default function App() {
         } else {
           msgs.push({ role: 'assistant', content: text, assistant: assistantData })
         }
-        console.log('replaceTypingWith: Updated message with assistant data:', msgs[msgs.length - 1]);
         return { ...prev, [selectedChatId!]: { ...chat, messages: msgs } }
       })
     }
@@ -614,7 +457,7 @@ export default function App() {
       if (file?.id && String(file.id).startsWith('multi_')) {
         // For multi-file chats, we need to get the original selected files from the chat
         const multiFileChat = chats[selectedChatId]
-        const originalFiles = multiFileChat.originalFiles || []
+        const originalFiles = multiFileChat?.originalFiles || []
         
         if (originalFiles.length === 0) {
           replaceTypingWith('Unable to find original files for this multi-file analysis. Please create a new multi-file analysis.')
@@ -663,12 +506,10 @@ export default function App() {
       // Check if this is an assistant generation response
       if (response?.assistant) {
         const assistant = response.assistant
-        console.log('sendMsg: Received assistant data:', assistant);
         // Pass assistant data to the message
         replaceTypingWith(ans, assistant)
         setAskResult({ answer: ans, assistant: assistant })
       } else {
-        console.log('sendMsg: No assistant data in response');
         replaceTypingWith(ans)
         setAskResult(response?.qa || { answer: ans })
       }
@@ -715,8 +556,7 @@ export default function App() {
     }
 
     setSearchLoading(true)
-    setSearchResults([])
-    setSearchStats(null)
+    // Don't clear results immediately - keep previous results visible during search
     setNotification('Searching through your Google Drive files...')
 
     try {
@@ -738,16 +578,22 @@ export default function App() {
         return
       }
 
-      setSearchResults(response.files || [])
+      // Only update results if we actually got a response
+      const files = response.files || []
+      const totalSearched = response.total_searched || 0
+      const matchesFound = response.matches_found || 0
+      
+      setSearchResults(files)
       setSearchStats({
-        total_searched: response.total_searched || 0,
-        matches_found: response.matches_found || 0
+        total_searched: totalSearched,
+        matches_found: matchesFound
       })
       
-      setNotification(`Found ${response.matches_found || 0} files matching "${searchQuery}" in your Google Drive`)
+      setNotification(`Found ${matchesFound} files matching "${searchQuery}" in your Google Drive`)
     } catch (error: any) {
       console.error('Search error:', error)
       setNotification(`Search failed: ${error?.message || 'Unknown error'}`)
+      // Don't clear results on error - keep previous results visible
     } finally {
       setSearchLoading(false)
     }
@@ -761,8 +607,7 @@ export default function App() {
     }
 
     setSearchLoading(true)
-    setSearchResults([])
-    setSearchStats(null)
+    // Don't clear results immediately for visual search either
     setNotification('Analyzing image and searching through your files...')
 
     try {
@@ -782,16 +627,22 @@ export default function App() {
         return
       }
 
-      setSearchResults(result.files || [])
+      // Only update results if we actually got a response
+      const files = result.files || []
+      const totalSearched = result.total_searched || 0
+      const matchesFound = result.matches_found || 0
+      
+      setSearchResults(files)
       setSearchStats({
-        total_searched: result.total_searched || 0,
-        matches_found: result.matches_found || 0
+        total_searched: totalSearched,
+        matches_found: matchesFound
       })
       
-      setNotification(`Found ${result.matches_found || 0} files related to "${result.detected_objects?.join(', ')}" in your Google Drive`)
+      setNotification(`Found ${matchesFound} files related to "${result.detected_objects?.join(', ')}" in your Google Drive`)
     } catch (error: any) {
       console.error('Visual search error:', error)
       setNotification(`Visual search failed: ${error?.message || 'Unknown error'}`)
+      // Don't clear results on error - keep previous results visible
     } finally {
       setSearchLoading(false)
     }
@@ -1865,21 +1716,12 @@ export default function App() {
                   {/* Main Chat Area */}
                   <div className="flex-1 flex flex-col">
                     <div className="professional-card flex-1 flex flex-col overflow-hidden">
-                      {/* Chat Header with Export Options */}
-                      <div className="bg-gradient-to-r from-stone-50 to-stone-100 p-4 border-b border-gray-200 flex justify-between items-center">
-                        <div>
-                          <h3 className="font-semibold text-gray-800">
-                            {selectedChatId && chats[selectedChatId] ? chats[selectedChatId].file.name : 'AI Assistant'}
-                          </h3>
-                          <p className="text-sm text-gray-500">Ask questions about your document</p>
-                        </div>
-                        
-                        {/* Chat Info */}
-                        {selectedChatId && chats[selectedChatId] && chats[selectedChatId].messages.length > 0 && (
-                          <div className="text-xs text-gray-500">
-                            {chats[selectedChatId].messages.length} messages
-                          </div>
-                        )}
+                      {/* Chat Header */}
+                      <div className="bg-gradient-to-r from-stone-50 to-stone-100">
+                        <h3 className="font-semibold text-gray-800">
+                          {selectedChatId && chats[selectedChatId] ? chats[selectedChatId].file.name : 'AI Assistant'}
+                        </h3>
+                        <p className="text-sm text-gray-500">Ask questions about your document</p>
                       </div>
 
                       {/* Messages Area - Single Scrollbar */}
@@ -1915,54 +1757,52 @@ export default function App() {
                                     <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-bl-md shadow-sm">
                                       <p className="text-sm text-gray-800">{msg.content}</p>
                                       
-                                      {/* AI Capabilities Info */}
-                                      {selectedChatId && !msg.content.includes('::typing::') && msg.role === 'assistant' && (
-                                        <div className="mt-3 pt-3 border-t border-gray-100">
-                                          <div className="text-xs text-gray-500 leading-relaxed">
-                                            <span className="font-medium text-gray-600">Ask me to create:</span>
-                                            <span className="text-gray-500"> Flowcharts • Notes • Timelines • Insights • Summaries • Q&A</span>
-                                            <br />
-                                            <span className="text-gray-400">Available formats: PDF, Word, Text, Images</span>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* Enhanced Download Button */}
-                                      <DownloadButton message={msg} className="mt-3" />
-                                      
-                                      {/* Fallback Download for Flowcharts */}
-                                      {!msg.assistant?.data && !msg.assistant?.base64 && msg.content && msg.content.includes('flowchart') && (
-                                        <div className="mt-3">
+                                      {/* Study Tools */}
+                                      {selectedChatId && !msg.content.includes('::typing::') && (
+                                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
                                           <button 
-                                            className="professional-btn professional-btn-primary text-sm"
-                                            type="button"
-                                            onClick={() => {
-                                              // Direct download - no complex logic
-                                              const mermaidUrl = 'https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgICBBW1N0YXJ0XSAtLT4gQltQcmVwYXJhdGlvbl0KICAgIEIgLS0-IENbIkJlZ2luIHByb2Nlc3MiXQogICAgQyAtLT4gRFsiRXhlY3V0ZSBtYWluIHRhc2tzIl0KICAgIEQgLS0-IEVbIkNvbXBsZXRlIG9iamVjdGl2ZXMiXQogICAgRSAtLT4gRltDb21wbGV0ZV0=';
-                                              
-                                              fetch(mermaidUrl)
-                                                .then(response => response.blob())
-                                                .then(blob => {
-                                                  const url = URL.createObjectURL(blob);
-                                                  const a = document.createElement('a');
-                                                  a.href = url;
-                                                  a.download = 'flowchart.png';
-                                                  document.body.appendChild(a);
-                                                  a.click();
-                                                  document.body.removeChild(a);
-                                                  URL.revokeObjectURL(url);
-                                                  setNotification('Download started');
-                                                })
-                                                .catch(() => {
-                                                  setNotification('Download failed');
-                                                });
-                                            }}
+                                            className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs rounded-full border border-blue-200 transition-colors"
+                                            onClick={() => sendStudyRequest('create flowchart in image')}
                                           >
-                                            Download Flowchart
+                                            Flowchart
+                                          </button>
+                                          <button 
+                                            className="px-3 py-1 bg-green-50 hover:bg-green-100 text-green-700 text-xs rounded-full border border-green-200 transition-colors"
+                                            onClick={() => sendStudyRequest('create notes in pdf')}
+                                          >
+                                            Notes
+                                          </button>
+                                          <button 
+                                            className="px-3 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs rounded-full border border-purple-200 transition-colors"
+                                            onClick={() => sendStudyRequest('create timeline in pdf')}
+                                          >
+                                            Timeline
+                                          </button>
+                                          <button 
+                                            className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs rounded-full border border-orange-200 transition-colors"
+                                            onClick={() => sendStudyRequest('create insights in pdf')}
+                                          >
+                                            Insights
                                           </button>
                                         </div>
                                       )}
-                                      
+
+                                      {/* Download Button */}
+                                      {msg.assistant?.type === 'download' && (
+                                        <div className="mt-3">
+                                          <Button 
+                                            tone="primary" 
+                                            onClick={() => downloadFile(
+                                              msg.assistant.filename,
+                                              msg.assistant.base64,
+                                              msg.assistant.mime
+                                            )}
+                                            className="professional-btn professional-btn-primary text-sm"
+                                          >
+                                            Download {msg.assistant.filename}
+                                          </Button>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 )}
@@ -2076,10 +1916,436 @@ export default function App() {
           )}
 
           {tab === 'search' && (
-            <SearchFiles />
+            <Section>
+              <div className="max-w-6xl mx-auto px-4 py-8">
+                {/* Search Header */}
+                <div className="text-center mb-8">
+                  <div className="relative inline-block mb-2">
+                    <h1 className="text-4xl font-bold text-[#8b7355] mb-2">
+                      <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#8b7355] to-[#c19a6b]">
+                        Clarifile Search
+                      </span>
+                    </h1>
+                    <div className="absolute -top-2 -right-2 bg-gradient-to-r from-amber-200 to-amber-400 text-amber-900 text-xs font-bold px-2 py-1 rounded-full shadow-md transform rotate-6">
+                      AI-Powered
+                    </div>
+                  </div>
+                  <p className="text-[#8b7355] text-lg">Intelligent document search powered by AI</p>
+                </div>
+                
+                {/* Search Box */}
+                <div className="bg-white rounded-xl shadow-md p-1.5 mb-8 border border-[#e6dfd4] transition-all duration-300 hover:shadow-lg">
+                  <div className="flex items-center">
+                    <div className="flex-1 relative">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b7355" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <path d="m21 21-4.35-4.35"></path>
+                        </svg>
+                      </div>
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && !searchLoading && performSearch()}
+                        placeholder="Search documents, PDFs, presentations, and more..."
+                        className="w-full pl-12 pr-4 py-3 text-[#2d2416] bg-transparent border-none focus:ring-0 focus:outline-none placeholder-[#8b7355]"
+                        disabled={searchLoading}
+                      />
+                    </div>
+                    
+                    {/* Visual Search Button */}
+                    <div className="flex-shrink-0 ml-2">
+                      <input
+                        ref={inputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        style={{ display: 'none' }}
+                        id="visual-search-input"
+                      />
+                      {!visualSearchImage ? (
+                        <label 
+                          htmlFor="visual-search-input" 
+                          className="inline-flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-[#8b7355] bg-white border border-[#e6dfd4] rounded-lg hover:bg-gray-50 transition-all duration-200 cursor-pointer whitespace-nowrap"
+                          title="Upload image for visual search"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-[#8b7355]">
+                            <path d="M12 15.5L8.5 12L10.5 10L12 11.5L13.5 10L15.5 12L12 15.5ZM9 2L7.17 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4H16.83L15 2H9ZM12 17C15.31 17 18 14.31 18 11S15.31 5 12 5S6 7.69 6 11S8.69 17 12 17Z"/>
+                          </svg>
+                          <span>Visual search</span>
+                        </label>
+                      ) : (
+                        <div className="flex items-center gap-3 bg-[#f9f6f0] px-4 py-2 rounded-lg border border-[#e6dfd4]">
+                          <div className="flex items-center gap-2 text-sm text-[#5d4e37]">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-green-500">
+                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                            </svg>
+                            <span>Image ready</span>
+                          </div>
+                          <button 
+                            onClick={() => setVisualSearchImage(null)}
+                            className="p-1 text-gray-500 hover:text-gray-700 transition-colors"
+                            title="Remove image"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M18 6L6 18M6 6l12 12"/>
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Clear Results Button */}
+                    {searchResults.length > 0 && (
+                      <button 
+                        onClick={() => {
+                          setSearchResults([])
+                          setSearchStats(null)
+                          setSearchQuery('')
+                          setNotification('Search results cleared')
+                        }}
+                        className="ml-2 px-4 py-3 bg-gray-100 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-2"
+                        title="Clear search results"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                        Clear
+                      </button>
+                    )}
+                    
+                    {/* Search Button */}
+                    <button 
+                      onClick={visualSearchImage ? performVisualSearch : performSearch}
+                      disabled={searchLoading || (!searchQuery.trim() && !visualSearchImage)}
+                      className="ml-2 px-6 py-3 bg-[#5d4e37] text-[#2d2416] text-sm font-medium rounded-lg hover:bg-[#4a3f2d] transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {searchLoading ? (
+                        <>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="animate-spin">
+                            <path d="M12 2V6M12 18V22M4.93 4.93L7.76 7.76M16.24 16.24L19.07 19.07M2 12H6M18 12H22M4.93 19.07L7.76 16.24M16.24 7.76L19.07 4.93"/>
+                          </svg>
+                          <span>Searching...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="search-icon interactive-icon">
+                            <path d="M15.5 14H14.71L14.43 13.73C15.41 12.59 16 11.11 16 9.5C16 5.91 13.09 3 9.5 3S3 5.91 3 9.5S5.91 16 9.5 16C11.11 16 12.59 15.41 13.73 14.43L14 14.71V15.5L19 20.49L20.49 19L15.5 14ZM9.5 14C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5S14 7.01 14 9.5S11.99 14 9.5 14Z"></path>
+                          </svg>
+                          <span>Search</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  
+                  {/* Image Preview */}
+                  {visualSearchPreview && (
+                    <div className="mt-3 ml-12">
+                      <div className="inline-flex items-center text-sm text-[#5d4e37] bg-[#f9f6f0] px-3 py-1.5 rounded-lg">
+                        <span>Image selected</span>
+                        <button 
+                          onClick={clearVisualSearch}
+                          className="ml-2 p-0.5 hover:bg-white/50 rounded-full transition-colors"
+                          title="Remove image"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-[#8b7355]">
+                            <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"/>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Search Stats */}
+                {searchStats && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                    <div className="bg-white p-4 rounded-xl border border-[#e6dfd4] shadow-sm">
+                      <div className="flex items-center">
+                        <div className="p-2 bg-[#f5f2ec] rounded-lg mr-3">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b7355" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 3v5h5M3 21l6-6m4-3a9 9 0 1 1-12-8.4"/>
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-[#2d2416]">{searchStats.total_searched.toLocaleString()}</div>
+                          <div className="text-sm text-[#5d4e37]">Files Searched</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-white p-4 rounded-xl border border-[#e6dfd4] shadow-sm">
+                      <div className="flex items-center">
+                        <div className="p-2 bg-[#f0f7ed] rounded-lg mr-3">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5a8f3d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="m9 12 2 2 4-4"/>
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-[#2d2416]">{searchStats.matches_found.toLocaleString()}</div>
+                          <div className="text-sm text-[#5d4e37]">Matches Found</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-white p-4 rounded-xl border border-[#e6dfd4] shadow-sm">
+                      <div className="flex items-center">
+                        <div className="p-2 bg-[#f5f0e6] rounded-lg mr-3">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c19a6b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-[#2d2416]">
+                            {((searchStats.matches_found / searchStats.total_searched) * 100).toFixed(1)}%
+                          </div>
+                          <div className="text-sm text-[#5d4e37]">Match Rate</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              {/* Search Results */}
+              <div className="space-y-4">
+                {searchResults.length > 0 ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-medium text-[#2d2416]">Search Results</h2>
+                      <div className="flex items-center gap-4">
+                        <div className="text-sm text-[#8b7355]">
+                          Showing {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'}
+                        </div>
+                        <button 
+                          onClick={() => {
+                            setSearchResults([])
+                            setSearchStats(null)
+                            setSearchQuery('')
+                            setNotification('Search results cleared')
+                          }}
+                          className="text-sm text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
+                          title="Clear all results"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                          </svg>
+                          Clear All
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4">
+                      {searchResults.map((file, index) => (
+                        <div 
+                          key={file.id} 
+                          className="group relative bg-white rounded-xl shadow-sm border border-[#e6dfd4] hover:shadow-lg transition-all duration-300 overflow-hidden hover:-translate-y-1"
+                          style={{animationDelay: `${index * 0.1}s`}}
+                        >
+                          <div className="p-6">
+                            <div className="flex items-start gap-4">
+                              <div className="flex-shrink-0 mt-1">
+                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center text-amber-700 shadow-sm">
+                                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    {(file.mimeType === 'application/pdf') && (
+                                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"/>
+                                    )}
+                                    {(file.mimeType?.includes('spreadsheet')) && (
+                                      <path d="M3 3v18h18V3H3zm16 16H5V5h14v14zM8 8h2v2H8V8zm0 4h2v2H8v-2zm4-4h2v2h-2V8zm0 4h2v2h-2v-2z"/>
+                                    )}
+                                    {(file.mimeType?.includes('presentation')) && (
+                                      <path d="M2 3h20v14H2V3zm18 12V5H4v10h16zM8 7h8v2H8V7zm0 4h6v2H8v-2z"/>
+                                    )}
+                                    {(file.mimeType?.includes('image')) && (
+                                      <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+                                    )}
+                                    {(file.mimeType?.includes('video')) && (
+                                      <path d="M8 5v14l11-7z"/>
+                                    )}
+                                    {(file.mimeType?.includes('audio')) && (
+                                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                                    )}
+                                    {(!file.mimeType || (!file.mimeType.includes('pdf') && !file.mimeType.includes('spreadsheet') && !file.mimeType.includes('presentation') && !file.mimeType.includes('image') && !file.mimeType.includes('video') && !file.mimeType.includes('audio'))) && (
+                                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8"/>
+                                    )}
+                                  </svg>
+                                </div>
+                              </div>
+                              
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <h3 className="text-lg font-semibold text-gray-900 truncate group-hover:text-[#8b7355] transition-colors">
+                                    {file.name}
+                                  </h3>
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-amber-100 to-amber-200 text-amber-800 shadow-sm">
+                                    {file.mimeType?.split('/').pop()?.toUpperCase() || 'FILE'}
+                                  </span>
+                                  {file.match_score && (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-green-100 to-green-200 text-green-800">
+                                      {Math.round((file.match_score || 0) * 100)}% Match
+                                    </span>
+                                  )}
+                                </div>
+                                
+                                {file.context && (
+                                  <p className="text-sm text-gray-600 mb-3 line-clamp-2 leading-relaxed">
+                                    {file.context}
+                                  </p>
+                                )}
+                                
+                                <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500">
+                                  <div className="flex items-center gap-1.5">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    {file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'Unknown date'}
+                                  </div>
+                                  
+                                  {file.size && (
+                                    <div className="flex items-center gap-1.5">
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                      </svg>
+                                      {file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'Unknown size'}
+                                    </div>
+                                  )}
+                                  
+                                  {file.match_type && (
+                                    <div className="flex items-center gap-1.5">
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                      </svg>
+                                      {file.match_type.replace('_', ' ')}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              <div className="flex-shrink-0 flex flex-col gap-2">
+                                <a
+                                  href={file.drive_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-[#8b7355] to-[#6b5a45] hover:from-[#6b5a45] hover:to-[#5a4a38] shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#8b7355] transition-all duration-200 transform hover:scale-105"
+                                >
+                                  <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M19 19H5V5H12V3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V12H19V19ZM14 3V5H17.59L7.76 14.83L9.17 16.24L19 6.41V10H21V3H14Z"/>
+                                  </svg>
+                                  Open in Drive
+                                </a>
+                                
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const mockFile = {
+                                      id: file.id,
+                                      name: file.name,
+                                      proposed_category: 'Search Result'
+                                    }
+                                    ensureChatForFile(mockFile)
+                                    setTab('ai')
+                                    setNotification(`Opened chat for "${file.name}"`)
+                                  }}
+                                  className="inline-flex items-center justify-center px-4 py-2.5 border border-[#e6dfd4] text-sm font-medium rounded-lg text-[#8b7355] bg-white hover:bg-gray-50 hover:border-[#8b7355] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#8b7355] transition-all duration-200"
+                                >
+                                  <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                  </svg>
+                                  Chat About File
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Match indicator bar */}
+                          <div
+                            className="h-1 bg-gradient-to-r from-green-400 via-blue-500 to-purple-600 transition-all duration-500"
+                            style={{ width: `${Math.round((file.match_score || file.confidence || 0.5) * 100)}%` }}
+                          ></div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : searchQuery && !searchLoading && searchStats && (
+                  <div className="text-center py-16">
+                    <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-amber-50 to-amber-100 text-amber-500 mb-6">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                      </svg>
+                    </div>
+                    <h3 className="text-2xl font-semibold text-gray-900 mb-2">No Files Found</h3>
+                    <p className="text-gray-500 max-w-md mx-auto mb-6">
+                      We couldn't find any files matching "{searchQuery}". Try different keywords or check your spelling.
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {['documents', 'presentations', 'spreadsheets', 'images', 'reports'].map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          onClick={() => {
+                            setSearchQuery(suggestion)
+                            performSearch()
+                          }}
+                          className="px-3 py-1.5 text-sm bg-white border border-[#e6dfd4] rounded-full hover:border-[#8b7355] hover:bg-gray-50 transition-colors"
+                        >
+                          Try "{suggestion}"
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!searchQuery && !searchLoading && (
+                  <div className="text-center py-20">
+                    <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-amber-50 to-amber-100 text-amber-500 mb-8 animate-pulse">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                      </svg>
+                    </div>
+                    <h3 className="text-3xl font-bold text-gray-900 mb-3">Search Your Files</h3>
+                    <p className="text-gray-500 max-w-2xl mx-auto mb-10 text-lg">
+                      Use natural language to find documents, images, and files across your Google Drive with AI-powered precision.
+                    </p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-4xl mx-auto">
+                      {[
+                        { 
+                          icon: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>, 
+                          title: 'Content Search', 
+                          desc: 'Search by content, not just filenames' 
+                        },
+                        { 
+                          icon: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>, 
+                          title: 'Visual Search', 
+                          desc: 'Find similar images with visual search' 
+                        },
+                        { 
+                          icon: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>, 
+                          title: 'AI-Powered', 
+                          desc: 'Semantic understanding of your content' 
+                        },
+                        { 
+                          icon: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>, 
+                          title: 'Smart Filters', 
+                          desc: 'Filter by file type, date, and more' 
+                        }
+                      ].map((item, index) => (
+                        <div key={index} className="group p-6 bg-white rounded-2xl border border-[#e6dfd4] shadow-sm hover:shadow-md hover:border-[#8b7355] transition-all duration-300 hover:-translate-y-1">
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center text-amber-600 mb-4 group-hover:scale-110 transition-transform duration-300">
+                            {item.icon}
+                          </div>
+                          <h4 className="text-lg font-semibold text-gray-900 mb-2 group-hover:text-[#8b7355] transition-colors">{item.title}</h4>
+                          <p className="text-sm text-gray-600 leading-relaxed">{item.desc}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Section>
           )}
-      </div>
-    </div>
       
       {showDocumentSelector ? (
         <div className="quick-action-backdrop">
@@ -2336,36 +2602,3 @@ export default function App() {
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
