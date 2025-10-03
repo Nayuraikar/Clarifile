@@ -1,4 +1,4 @@
-const CLIENT_ID = '36164233493xxxxxxx';
+const CLIENT_ID = 'xxxxxxxxxxxxxxx';
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.metadata.readonly'

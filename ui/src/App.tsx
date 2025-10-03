@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import DuplicateResolution from './DuplicateResolution'
+import './textCleaner.js'
 
 const BASE = 'http://127.0.0.1:4000'
 
@@ -876,24 +877,22 @@ export default function App() {
   return (
     <div className="min-h-screen relative overflow-hidden">
       {notification && (
-        <div style={{ position: 'fixed', top: 16, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 9999, pointerEvents: 'none' }}>
-          <div className="notification-toast notification-info" style={{ pointerEvents: 'auto' }}>
-            <div className="notification-content">
-              <div className="notification-icon">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-                </svg>
-              </div>
-              <span style={{color: '#4a4a4a', fontSize: '13px'}}>{notification}</span>
+        <div className="notification-toast notification-info">
+          <div className="notification-content">
+            <div className="notification-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+              </svg>
             </div>
-            <button 
-              onClick={() => setNotification(null)}
-              className="notification-close"
-              title="Close notification"
-            >
-              Ãƒâ€”
-            </button>
+            <span>{notification}</span>
           </div>
+          <button 
+            onClick={() => setNotification(null)}
+            className="notification-close"
+            title="Close notification"
+          >
+            ×
+          </button>
         </div>
       )}
       {/* Professional Background Effects */}
@@ -1653,172 +1652,237 @@ export default function App() {
                   </div>
                 )}
                 
-                <div className="grid gap-8 lg:grid-cols-3">
-                  <div className="lg:col-span-2">
-                    <div className="flex gap-4">
-                      {/* Sidebar listing chats by file name */}
-                      <div className="professional-card" style={{ width: 280, flex: '0 0 auto' }}>
-                        <div className="card-heading mb-3">Chats</div>
-                        <div className="space-y-2">
-                          {Object.keys(chats).length === 0 ? (
-                            <div className="chat-empty-state">
-                              <div className="chat-empty-icon"></div>
-                              <p className="chat-empty-text">Analyze a file to start a chat</p>
+                <div className="flex gap-6 h-[calc(100vh-200px)]">
+                  {/* Chat Sidebar */}
+                  <div className="w-80 flex-shrink-0">
+                    <div className="professional-card h-full flex flex-col">
+                      <div className="card-heading mb-4">Active Chats</div>
+                      <div className="flex-1 overflow-y-auto space-y-2">
+                        {Object.keys(chats).length === 0 ? (
+                          <div className="text-center py-8">
+                            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-beige-100 to-beige-300 rounded-full flex items-center justify-center">
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="text-beige-700">
+                                <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/>
+                              </svg>
                             </div>
-                          ) : (
-                            Object.values(chats).map(({ file }) => (
-                              <button
-                                key={file.id}
-                                onClick={() => { setSelectedChatId(file.id); setDriveAnalyzedId(file.id) }}
-                                className={`w-full text-left professional-button ${selectedChatId === file.id ? 'active' : ''}`}
-                              >
-                                {file.name}
-                              </button>
-                            ))
-                          )}
-                        </div>
+                            <p className="text-gray-500 text-sm">Analyze a file to start chatting</p>
+                          </div>
+                        ) : (
+                          Object.values(chats).map(({ file }) => (
+                            <button
+                              key={file.id}
+                              onClick={() => { setSelectedChatId(file.id); setDriveAnalyzedId(file.id) }}
+                              className={`w-full text-left p-3 rounded-lg transition-all ${
+                                selectedChatId === file.id 
+                                  ? 'bg-gradient-to-r from-amber-100 to-amber-200 border border-amber-300' 
+                                  : 'hover:bg-gray-50 border border-transparent'
+                              }`}
+                            >
+                              <div className="font-medium text-gray-800 truncate">{file.name}</div>
+                              <div className="text-xs text-gray-500 mt-1">Active chat</div>
+                            </button>
+                          ))
+                        )}
                       </div>
-                      {/* Chat pane */}
-                      <div className="flex-1">
-                        <div className="chat-container">
-                          <div className="chat-header"> {selectedChatId && chats[selectedChatId] ? chats[selectedChatId].file.name : 'Chat'}</div>
-                          <div className="chat-messages">
-                            {!selectedChatId || !chats[selectedChatId] || chats[selectedChatId].messages.length === 0 ? (
-                              <div className="chat-empty-state">
-                                <div className="chat-empty-icon"></div>
-                                <p className="chat-empty-text">Select a chat or analyze a file to begin</p>
-                              </div>
+                    </div>
+                  </div>
+
+                  {/* Main Chat Area */}
+                  <div className="flex-1 flex flex-col">
+                    <div className="professional-card flex-1 flex flex-col overflow-hidden">
+                      {/* Chat Header */}
+                      <div className="bg-gradient-to-r from-stone-50 to-stone-100">
+                        <h3 className="font-semibold text-gray-800">
+                          {selectedChatId && chats[selectedChatId] ? chats[selectedChatId].file.name : 'AI Assistant'}
+                        </h3>
+                        <p className="text-sm text-gray-500">Ask questions about your document</p>
+                      </div>
+
+                      {/* Messages Area - Single Scrollbar */}
+                      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {!selectedChatId || !chats[selectedChatId] || chats[selectedChatId].messages.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center h-full text-center">
+                            <div className="w-20 h-20 bg-gradient-to-br from-grey-100 to-grey-200 rounded-full flex items-center justify-center mb-4">
+                              <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" className="text-grey-600">
+                                <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"/>
+                              </svg>
+                            </div>
+                            <h4 className="text-lg font-medium text-gray-700 mb-2">Ready to Chat</h4>
+                            <p className="text-gray-500">Select a file from the sidebar or analyze a new document to begin</p>
+                          </div>
                             ) : (
-                              <div className="chat-messages-container">
-                                {chats[selectedChatId].messages.filter(m => m.content !== '::typing::').map((msg, index) => (
-                                  <div key={index} className="message-wrapper">
-                                    {msg.role === 'user' ? (
-                                      <div className="user-message-container">
-                                        <div className="user-message-bubble">
-                                          <div className="message-text">{msg.content}</div>
-                                        </div>
-                                        <div className="chat-avatar user-avatar">U</div>
-                                      </div>
-                                    ) : (
-                                      <div className="assistant-message-container">
-                                        <div className="chat-avatar assistant-avatar">AI</div>
-                                        <div className="assistant-message-bubble">
-                                          {msg.content === '::typing::' ? (
-                                            <div className="typing-indicator">
-                                              <div className="typing-dots">
-                                                <div className="typing-dot"></div>
-                                                <div className="typing-dot"></div>
-                                                <div className="typing-dot"></div>
-                                              </div>
-                                              <span className="typing-text">Typing...</span>
-                                            </div>
-                                          ) : (
-                                            <div>
-                                              <div className="message-text">{msg.content}</div>
-                                              {/* Check if this message has download info */}
-                                              {msg.assistant?.type === 'download' && (
-                                                <div className="mt-3">
-                                                  <Button 
-                                                    tone="primary" 
-                                                    onClick={() => downloadFile(
-                                                      msg.assistant.filename,
-                                                      msg.assistant.base64,
-                                                      msg.assistant.mime
-                                                    )}
-                                                    className="text-sm"
-                                                  >
-                                                    Download {msg.assistant.filename}
-                                                  </Button>
-                                                </div>
-                                              )}
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
+                          <>
+                            {chats[selectedChatId].messages.filter(m => m.content !== '::typing::').map((msg, index) => (
+                              <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                {msg.role === 'user' ? (
+                                  <div className="flex items-end gap-2 max-w-[70%]">
+                                    <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-3 rounded-2xl rounded-br-md">
+                                      <p className="text-sm">{msg.content}</p>
+                                    </div>
+                                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                                      U
+                                    </div>
                                   </div>
-                                ))}
+                                ) : (
+                                  <div className="flex items-start gap-2 max-w-[80%]">
+                                    <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                                      AI
+                                    </div>
+                                    <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-bl-md shadow-sm">
+                                      <p className="text-sm text-gray-800">{msg.content}</p>
+                                      
+                                      {/* Study Tools */}
+                                      {selectedChatId && !msg.content.includes('::typing::') && (
+                                        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
+                                          <button 
+                                            className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs rounded-full border border-blue-200 transition-colors"
+                                            onClick={() => sendStudyRequest('create flowchart in image')}
+                                          >
+                                            Flowchart
+                                          </button>
+                                          <button 
+                                            className="px-3 py-1 bg-green-50 hover:bg-green-100 text-green-700 text-xs rounded-full border border-green-200 transition-colors"
+                                            onClick={() => sendStudyRequest('create notes in pdf')}
+                                          >
+                                            Notes
+                                          </button>
+                                          <button 
+                                            className="px-3 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs rounded-full border border-purple-200 transition-colors"
+                                            onClick={() => sendStudyRequest('create timeline in pdf')}
+                                          >
+                                            Timeline
+                                          </button>
+                                          <button 
+                                            className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs rounded-full border border-orange-200 transition-colors"
+                                            onClick={() => sendStudyRequest('create insights in pdf')}
+                                          >
+                                            Insights
+                                          </button>
+                                        </div>
+                                      )}
+
+                                      {/* Download Button */}
+                                      {msg.assistant?.type === 'download' && (
+                                        <div className="mt-3">
+                                          <Button 
+                                            tone="primary" 
+                                            onClick={() => downloadFile(
+                                              msg.assistant.filename,
+                                              msg.assistant.base64,
+                                              msg.assistant.mime
+                                            )}
+                                            className="professional-btn professional-btn-primary text-sm"
+                                          >
+                                            Download {msg.assistant.filename}
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+
+                            {/* Typing Indicator */}
+                            {selectedChatId && chats[selectedChatId].messages.some(m => m.content === '::typing::') && (
+                              <div className="flex items-start gap-2">
+                                <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                                  AI
+                                </div>
+                                <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-bl-md shadow-sm">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex gap-1">
+                                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                                    </div>
+                                    <span className="text-xs text-gray-500">Typing...</span>
+                                  </div>
+                                </div>
                               </div>
                             )}
-                          </div>
-                        </div>
-                        <div className="professional-card">
-                          <div className="flex gap-4">
-                            <input
-                              ref={inputRef}
-                              type="text"
-                              value={askInput}
-                              onChange={(e) => setAskInput(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && sendMsg()}
-                              placeholder="Ask about this file..."
-                              className="flex-1 px-4 py-3 rounded-xl border border-border focus:outline-none focus:ring-2 focus:ring-accent-primary bg-bg-card text-text-primary"
-                            />
-                            <Button tone='primary' onClick={sendMsg} disabled={!askInput.trim() || !selectedChatId} className="professional-button">
-                              Send
-                            </Button>
-                          </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Input Area */}
+                      <div className="border-t border-gray-200 p-4">
+                        <div className="flex items-center gap-3 bg-gray-50 rounded-full px-4 py-2 border border-gray-200 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
+                          <input
+                            ref={inputRef}
+                            type="text"
+                            value={askInput}
+                            onChange={(e) => setAskInput(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && sendMsg()}
+                            placeholder="Ask about this file..."
+                            className="flex-1 bg-transparent border-none outline-none text-gray-800 placeholder-gray-500"
+                            disabled={!selectedChatId}
+                          />
+                          <button 
+                            className="w-8 h-8 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-full flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed" 
+                            onClick={sendMsg} 
+                            disabled={!askInput.trim() || !selectedChatId}
+                            title="Send message"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z"/>
+                            </svg>
+                          </button>
                         </div>
                       </div>
                     </div>
                   </div>
-                  
-                  <div>
-                    <div className="professional-card">
+
+                  {/* Quick Actions Sidebar */}
+                  <div className="w-80 flex-shrink-0">
+                    <div className="professional-card h-full">
                       <div className="card-heading mb-4">Quick Actions</div>
                       <div className="space-y-3">
-                        <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('summarize')} disabled={quickActionLoading} loading={quickActionLoading}>
-                          Summarize Documents
+                        <Button tone='secondary' className="w-full justify-start professional-btn professional-btn-secondary" onClick={() => handleQuickAction('summarize')} disabled={quickActionLoading} loading={quickActionLoading}>
+                          {quickActionLoading ? (
+                            <div className="loading-dots">
+                              <div className="loading-dot"></div>
+                              <div className="loading-dot"></div>
+                              <div className="loading-dot"></div>
+                            </div>
+                          ) : (
+                            <>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.89 22 5.99 22H18C19.1 22 20 21.1 20 20V8L14 2Z"/>
+                                <path d="M14 2V8H20"/>
+                              </svg>
+                              Summarize Documents
+                            </>
+                          )}
                         </Button>
-                        <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('find_similar')} disabled={quickActionLoading} loading={quickActionLoading}>
+                        <Button tone='secondary' className="w-full justify-start professional-btn professional-btn-secondary" onClick={() => handleQuickAction('find_similar')} disabled={quickActionLoading} loading={quickActionLoading}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M15.5 14H14.71L14.43 13.73C15.41 12.59 16 11.11 16 9.5C16 5.91 13.09 3 9.5 3S3 5.91 3 9.5S5.91 16 9.5 16C11.11 16 12.59 15.41 13.73 14.43L14 14.71V15.5L19 20.49L20.49 19L15.5 14ZM9.5 14C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5S14 7.01 14 9.5S11.99 14 9.5 14Z"/>
+                          </svg>
                           Find Similar Files
                         </Button>
-                        <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('extract_insights')} disabled={quickActionLoading} loading={quickActionLoading}>
-                          Info Panel
+                        <Button tone='secondary' className="w-full justify-start professional-btn professional-btn-secondary" onClick={() => handleQuickAction('extract_insights')} disabled={quickActionLoading} loading={quickActionLoading}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                          </svg>
+                          Extract Insights
                         </Button>
-                        <Button tone='secondary' className="w-full justify-start professional-button" onClick={() => handleQuickAction('organize')} disabled={quickActionLoading} loading={quickActionLoading}>
+                        <Button tone='secondary' className="w-full justify-start professional-btn professional-btn-secondary" onClick={() => handleQuickAction('organize')} disabled={quickActionLoading} loading={quickActionLoading}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M10 4H4C2.89 4 2 4.89 2 6V18C2 19.11 2.89 20 4 20H20C21.11 20 22 19.11 22 18V8C22 6.89 21.11 6 20 6H12L10 4Z"/>
+                          </svg>
                           Organize Files
                         </Button>
-                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => handleQuickAction('multi_files')} disabled={quickActionLoading} loading={quickActionLoading}>
-                           Multi-Files Analysis
+                        <Button tone='accent' className="w-full justify-start professional-btn professional-btn-accent" onClick={() => handleQuickAction('multi_files')} disabled={quickActionLoading} loading={quickActionLoading}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.89 22 5.99 22H18C19.1 22 20 21.1 20 20V8L14 2Z"/>
+                            <path d="M16 0H8C6.9 0 6 0.9 6 2V18C6 19.1 6.89 20 7.99 20H20C21.1 20 22 19.1 22 18V6L16 0Z"/>
+                          </svg>
+                          Multi-Files Analysis
                         </Button>
                       </div>
                     </div>
                     
-                    <div className="professional-card mt-6">
-                      <div className="card-heading mb-4">Study Assistant</div>
-                      <div className="space-y-3">
-                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create flowchart')} disabled={!selectedChatId}>
-                          Create Flowchart
-                        </Button>
-                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create revision notes')} disabled={!selectedChatId}>
-                          Revision Notes
-                        </Button>
-                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create flashcards')} disabled={!selectedChatId}>
-                          Generate Flashcards
-                        </Button>
-                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create timeline')} disabled={!selectedChatId}>
-                          Create Timeline
-                        </Button>
-                        <Button tone='accent' className="w-full justify-start professional-button" onClick={() => sendStudyRequest('create key insights')} disabled={!selectedChatId}>
-                          Key Insights
-                        </Button>
-                      </div>
-                      
-                      <div className="mt-4 pt-4 border-t border-border">
-                        <div className="text-sm text-text-secondary mb-3">Download Formats:</div>
-                        <div className="grid grid-cols-4 gap-2">
-                          <Button tone='secondary' className="text-xs" onClick={() => sendStudyRequest('create revision notes in pdf')} disabled={!selectedChatId}>
-                            PDF
-                          </Button>
-                          <Button tone='secondary' className="text-xs" onClick={() => sendStudyRequest('create revision notes in docx')} disabled={!selectedChatId}>
-                            DOCX
-                          </Button>
-                          <Button tone='secondary' className="text-xs" onClick={() => sendStudyRequest('create revision notes in txt')} disabled={!selectedChatId}>
-                            TXT
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -2434,12 +2498,12 @@ export default function App() {
                   }
                 >
                   {quickActionLoading 
-                    ? 'â³ Analyzing...' 
+                    ? 'Analyzing...' 
                     : selectedFiles.length === 0 
-                      ? 'ðŸ“‚ Select Files First' 
+                      ? 'Select Files First' 
                       : !multiFileQuery.trim()
-                        ? 'âœï¸ Enter Query First'
-                        : `ðŸš€ SUBMIT (${selectedFiles.length} File${selectedFiles.length !== 1 ? 's' : ''})`
+                        ? 'Enter Query First'
+                        : `SUBMIT (${selectedFiles.length} File${selectedFiles.length !== 1 ? 's' : ''})`
                   }
                 </button>
               </div>

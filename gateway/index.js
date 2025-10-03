@@ -21,10 +21,9 @@ let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = '36164233493xxxxxxx'; 
-const CLIENT_SECRET = 'GOCSPX-xxxxxxxx';                         
-const REDIRECT_URI = 'https://jxxxxxxxxg/';
-
+const CLIENT_ID = 'xxxxxxxxxxxxxxxx'; 
+const CLIENT_SECRET = 'xxxxxxxxxxxxxxx';                         
+const REDIRECT_URI = 'xxxxxxxxxxxxxx';
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
   try { const r = await axios.post(`${PARSER}/scan_folder`); res.json(r.data); }
