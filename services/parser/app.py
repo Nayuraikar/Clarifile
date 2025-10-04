@@ -1,4 +1,3 @@
-# parser/app.py
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -14,7 +13,6 @@ import chardet
 import torch
 import torchvision.transforms as transforms
 from torchvision import models
-# import whisper  # Commented out due to NumPy version conflict
 import cv2
 import sys
 import os
@@ -23,17 +21,17 @@ from smart_categorizer import SmartCategorizer
 import nlp
 from services.categorizer_fallback import categorize_with_fallback
 from semantic_search import hybrid_search, semantic_search, clean_query
-from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from services.assistant_generator import generate, export_bytes
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# --- Paths & constants ---
 DB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "metadata_db", "clarifile.db")
 ALLOWED_EXTS = {
-    ".txt", ".pdf", ".png", ".jpg", ".jpeg",
-    ".mp3", ".wav", ".mp4", ".mkv", ".mpeg",
-    ".docx"
+    ".txt", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif",
+    ".mp3", ".wav", ".mp4", ".mkv", ".mpeg", ".avi", ".mov", ".wmv", ".flv", ".m4a", ".aac", ".ogg", ".flac",
+    ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".csv", ".rtf", ".odt", ".ods", ".odp",
+    ".json", ".xml", ".html", ".htm", ".md", ".py", ".js", ".css", ".java", ".cpp", ".c", ".h",
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"
 }
 
 app = FastAPI()
@@ -71,21 +69,19 @@ class DriveAnalyzeRequest(BaseModel):
 class AssistantGenerateRequest(BaseModel):
     # kind: flowchart | short_notes | detailed_notes | timeline | key_insights | flashcards
     kind: str
-    text: str | None = None  # direct text; if absent, use file content
+    text: str | None = None  
     file: dict | None = None
-    format: str | None = None  # pdf | docx | txt | md
+    format: str | None = None  
     auth_token: str | None = None
 
     class Config:
         extra = 'allow'
 
-
-# --- Category DB helpers ---
 def _ensure_categories_table():
     try:
         conn = sqlite3.connect(DB)
         cur = conn.cursor()
-        cur.execute(
+        cur.execute( 
             """
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,7 +97,6 @@ def _ensure_categories_table():
             conn.close()
         except Exception:
             pass
-
 
 def get_or_create_category_id(category_name: str, rep_content: str = "") -> int | None:
     if not category_name:
@@ -226,7 +221,7 @@ def infer_category_from_extension(file_name: str, mime_type: str | None) -> str:
 @app.post("/drive_analyze")
 def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)):
     """Download the Drive file, extract text using existing extractors, summarize with Gemini,
-    and optionally answer a question against the text. Returns transient results (no DB write).
+    and optionally answer a question against the text
     """
     print("DRIVE_ANALYZE ENDPOINT CALLED!")
     print(f"File: {req.file.get('name') if req.file else 'NO FILE'}")
@@ -257,30 +252,25 @@ def drive_analyze(req: DriveAnalyzeRequest, auth_token: str | None = Query(None)
             transcript = transcribe_audio(path)
             text = transcript
         else:
-            # Fallback: try reading as text
             text = read_text_file(path)
 
         summary = summarize_text(text)
-        # Use the full extracted text for smart categorization, not just summary
+        # Use the full extracted text for smart categorization
         print(f"EXTRACTION DEBUG: Text extracted: {len(text) if text else 0} chars")
         print(f"EXTRACTION DEBUG: Summary generated: {len(summary) if summary else 0} chars")
         print(f"EXTRACTION DEBUG: Text preview: '{text[:300] if text else 'NO TEXT'}'")
         print(f"EXTRACTION DEBUG: Summary preview: '{summary[:200] if summary else 'NO SUMMARY'}'")
         
-        # FORCE CATEGORIZATION WITH ACTUAL CONTENT (hybrid + fallback)
         if text and len(text.strip()) > 10:
             print(f"FORCING CATEGORIZATION with extracted text")
             try:
-                # Prefer new hybrid categorizer; fall back to legacy assigner
                 cat_name, debug = categorize_with_fallback(text, existing_categorizer=getattr(smart_categorizer, "categorize", None))
             except Exception as _e:
                 cat_name, debug = None, {"error": str(_e)}
 
             if not cat_name:
-                # Legacy path (kept for compatibility with DB/category ID expectations)
                 cat_id, cat_name = assign_category_from_summary("", text)
             else:
-                # Persist/lookup the new category in DB for UI visibility
                 cat_id = get_or_create_category_id(cat_name, rep_content=text)
             
             if not cat_name or cat_name == "CATEGORIZATION_FAILED":
@@ -375,7 +365,6 @@ def assistant_generate(req: AssistantGenerateRequest):
         'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'pdf': 'application/pdf'
     }.get((req.format or 'md').lower(), 'application/octet-stream')
-    # Also return raw content for inline preview
     return {"kind": kind, "filename": filename, "base64": b64, "mime": mime, "content": content}
 
 # Allow requests from your frontend origin
@@ -403,16 +392,8 @@ EMBED_SERVICE = os.getenv("EMBED_SERVICE", "http://127.0.0.1:8002")
 smart_categorizer = SmartCategorizer()
 
 # Lazy loading for heavy models
-# whisper_model = None  # Commented out due to NumPy version conflict
 cv_model = None
 transform = None
-
-# def get_whisper_model():  # Commented out due to NumPy version conflict
-#     global whisper_model
-#     if whisper_model is None:
-#         print("Loading Whisper model...")
-#         whisper_model = whisper.load_model("base")
-#     return whisper_model
 
 def get_cv_model():
     global cv_model, transform
@@ -426,7 +407,6 @@ def get_cv_model():
         ])
     return cv_model, transform
 
-# --- DB init ---
 def init_db():
     os.makedirs(os.path.dirname(DB), exist_ok=True)
     conn = sqlite3.connect(DB, check_same_thread=False)
@@ -539,8 +519,6 @@ async def shutdown_event():
         except Exception as e:
             print(f"Error closing database connection: {e}")
 
-
-# --- Utilities ---
 def file_hash(path):
     h = hashlib.sha256()
     with open(path, 'rb') as f:
@@ -614,7 +592,7 @@ def extract_and_store_entities(con, file_id: int, text: str):
     con.commit()
     return {"entities": [{"name": n, "type": t, "count": c} for (n,t), c in counter.items()], "unique": len(inserted_ids)}
 
-# --- Text extraction ---
+# Text extraction 
 def read_text_file(path):
     try:
         with open(path, "rb") as f:
@@ -669,7 +647,7 @@ def extract_text_from_docx(path):
         print(f"Error extracting text from DOCX: {e}")
         return ""
 
-# --- Audio/Video + CV ---
+# Audio/Video and cv
 import speech_recognition as sr
 from pydub import AudioSegment
 import os
@@ -691,13 +669,6 @@ def transcribe_audio(path, use_google=True):
     """
     Transcribe audio from an audio file using speech recognition.
     Supports WAV, MP3, M4A, OGG, and FLAC formats.
-    
-    Args:
-        path (str): Path to the audio file
-        use_google (bool): Whether to use Google Speech Recognition (default: True)
-        
-    Returns:
-        str: Transcribed text or empty string if transcription fails
     """
     try:
         import speech_recognition as sr
@@ -708,34 +679,27 @@ def transcribe_audio(path, use_google=True):
         import json
         import subprocess
         
-        # Check if file exists and has content
         if not os.path.exists(path) or os.path.getsize(path) == 0:
             print(f"Error: File not found or empty: {path}")
             return ""
             
-        # Initialize recognizer
         r = sr.Recognizer()
-        
-        # Convert to WAV if needed
         file_ext = os.path.splitext(path)[1].lower()
         temp_wav = None
         audio_path = path
         
         try:
             if file_ext != '.wav':
-                # Create a temporary WAV file with unique name
                 temp_wav = os.path.join(tempfile.gettempdir(), f"temp_audio_{os.getpid()}.wav")
                 print(f"Converting {file_ext} to WAV format (16kHz, mono, 16-bit PCM)...")
-                
-                # First try ffmpeg for better format conversion
                 try:
                     cmd = [
                         'ffmpeg',
-                        '-y',  # Overwrite output file if it exists
+                        '-y', 
                         '-i', path,
-                        '-ar', '16000',  # Set sample rate to 16kHz
-                        '-ac', '1',      # Convert to mono
-                        '-acodec', 'pcm_s16le',  # 16-bit PCM
+                        '-ar', '16000', 
+                        '-ac', '1',     
+                        '-acodec', 'pcm_s16le', 
                         '-loglevel', 'error',
                         temp_wav
                     ]
@@ -743,7 +707,6 @@ def transcribe_audio(path, use_google=True):
                     if result.stderr:
                         print(f"FFmpeg warnings: {result.stderr}")
                     
-                    # Verify the output file
                     if os.path.exists(temp_wav) and os.path.getsize(temp_wav) > 0:
                         audio_path = temp_wav
                         print("FFmpeg conversion successful")
@@ -755,19 +718,16 @@ def transcribe_audio(path, use_google=True):
                     print("Falling back to pydub for conversion...")
                     
                     try:
-                        # Convert to WAV using pydub as fallback
                         audio = AudioSegment.from_file(path)
                         print(f"Original audio info - channels: {audio.channels}, sample_width: {audio.sample_width}, frame_rate: {audio.frame_rate}")
                         
-                        # Convert to mono if stereo
                         if audio.channels > 1:
                             audio = audio.set_channels(1)
                         
-                        # Set frame rate to 16kHz
                         audio = audio.set_frame_rate(16000)
                         
                         # Ensure 16-bit PCM
-                        if audio.sample_width != 2:  # 2 bytes = 16 bits
+                        if audio.sample_width != 2:  
                             audio = audio.set_sample_width(2)
                         
                         # Export with specific format
@@ -803,8 +763,7 @@ def transcribe_audio(path, use_google=True):
                     if channels != 1 or sample_width != 2:
                         error_msg = f"WAV file must be mono (1 channel) and 16-bit PCM (got {channels} channels, {sample_width*8}-bit)"
                         print(error_msg)
-                        
-                        # Try to fix the file if possible
+
                         if channels != 1 or sample_width != 2:
                             print("Attempting to fix audio format...")
                             fixed_wav = os.path.join(tempfile.gettempdir(), f"fixed_audio_{os.getpid()}.wav")
@@ -815,8 +774,7 @@ def transcribe_audio(path, use_google=True):
                                 if sample_width != 2:
                                     audio = audio.set_sample_width(2)
                                 audio.export(fixed_wav, format="wav")
-                                
-                                # Verify the fixed file
+
                                 with wave.open(fixed_wav, 'rb') as fixed_wav_file:
                                     if fixed_wav_file.getnchannels() == 1 and fixed_wav_file.getsampwidth() == 2:
                                         audio_path = fixed_wav
@@ -838,7 +796,7 @@ def transcribe_audio(path, use_google=True):
                 print(f"Invalid WAV file: {e}")
                 return ""
             
-            # Try Google Speech Recognition first (if enabled)
+            # Try Google Speech Recognition first
             if use_google:
                 try:
                     print("Trying Google Speech Recognition...")
@@ -859,7 +817,6 @@ def transcribe_audio(path, use_google=True):
                 print("Trying Vosk offline recognition...")
                 import vosk
                 
-                # Download Vosk model if not present
                 model_dir = os.path.join(tempfile.gettempdir(), "vosk-model-small-en-us")
                 model_zip = os.path.join(tempfile.gettempdir(), "vosk-model-small-en-us.zip")
                 
@@ -879,7 +836,6 @@ def transcribe_audio(path, use_google=True):
                     except:
                         pass
                 
-                # Initialize Vosk model
                 model = vosk.Model(model_dir)
                 rec = vosk.KaldiRecognizer(model, 16000)
                 
@@ -893,7 +849,6 @@ def transcribe_audio(path, use_google=True):
                         if rec.AcceptWaveform(data):
                             result.append(json.loads(rec.Result())['text'])
                 
-                # Get final result
                 result.append(json.loads(rec.FinalResult())['text'])
                 text = ' '.join([r for r in result if r.strip()])
                 
@@ -907,7 +862,6 @@ def transcribe_audio(path, use_google=True):
             return ""
                     
         finally:
-            # Clean up temporary file if it was created
             if temp_wav and os.path.exists(temp_wav):
                 try:
                     os.remove(temp_wav)
@@ -962,8 +916,6 @@ def process_video_ffmpeg(path):
         print("Video processing error:", e)
     return transcript, frames_labels
 
-
-# --- Summarization ---
 def summarize_text(long_text: str) -> str:
     if not long_text.strip():
         return ""
@@ -973,11 +925,10 @@ def summarize_text(long_text: str) -> str:
         return nlp.summarize_with_gemini(long_text, max_tokens=512)
     except Exception as e:
         print(f"Gemini summarization error: {e}")
-        # Fallback: return a simple excerpt
         return long_text[:500] + "..." if len(long_text) > 500 else long_text
 
 def summarize_text_with_gemini(long_text: str) -> str:
-    """Original Gemini-based summarization - kept for future use when API keys are fixed"""
+    #Original Gemini-based summarization
     if not long_text.strip():
         return ""
 
@@ -985,10 +936,9 @@ def summarize_text_with_gemini(long_text: str) -> str:
         return nlp.summarize_with_gemini(long_text, max_tokens=512)
     except Exception as e:
         print(f"Gemini summarization error: {e}")
-        # Fallback: return a simple excerpt
         return long_text[:500] + "..." if len(long_text) > 500 else long_text
 
-# --- Category assignment ---
+#Category assignment
 def compress_title(summary: str) -> str:
     if not summary: return "General"
     lower = summary.lower()
@@ -998,10 +948,7 @@ def compress_title(summary: str) -> str:
     return summary.split(" ")[0:3][0]
 
 def assign_category_from_summary(summary: str, full_text: str = "", threshold: float = 0.75):
-    """
-    Assign a category to a file based on its content using WORKING content analysis.
-    This function WILL categorize files properly based on their actual content.
-    """
+    
     content_to_analyze = full_text.strip() or summary.strip()
     if not content_to_analyze:
         return None, "Uncategorized: General"
@@ -1010,57 +957,43 @@ def assign_category_from_summary(summary: str, full_text: str = "", threshold: f
     print(f"CATEGORIZATION DEBUG: Content preview: {content_to_analyze[:200]}...")
 
     try:
-        # DIRECT CONTENT ANALYSIS - NO DEPENDENCIES ON EXTERNAL MODELS
         category_name = analyze_content_directly(content_to_analyze)
         print(f"CATEGORIZATION DEBUG: Direct analysis result: {category_name}")
-
-        # If analysis failed, return error instead of fallback
         if category_name is None:
             print("CATEGORIZATION FAILED: No proper category could be determined")
             return None, "CATEGORIZATION_FAILED"
 
-        # Clean up the category name
         category_name = category_name.strip()
 
-        # Ensure we have a valid category name
         if not category_name or len(category_name) < 2:
             print("CATEGORIZATION FAILED: Invalid category name returned")
             return None, "CATEGORIZATION_FAILED"
 
-        # Clean up the category name (remove any non-alphanumeric characters except spaces, colons, and hyphens)
         category_name = re.sub(r'[^\w\s:-]', '', category_name).strip()
 
-        # Ensure we have a valid format (Category: Subcategory)
         if ':' not in category_name:
-            # If it's a single word, add a default subcategory
             if ' ' not in category_name:
                 category_name = f"{category_name}: General"
             else:
-                # Otherwise, split on first space
                 parts = category_name.split(' ', 1)
                 category_name = f"{parts[0]}: {parts[1]}"
 
-        # Extract main category (everything before first colon)
         main_category = category_name.split(':', 1)[0].strip()
 
-        # Ensure main category is not empty
         if not main_category:
             main_category = "General"
             category_name = "General: Document"
 
         print(f"CATEGORIZATION DEBUG: Final category assignment: '{category_name}' (Main: '{main_category}')")
 
-        # Insert or get the category from the database
         cur = conn.cursor()
-        rep_content = full_text[:500] if full_text else summary[:500]  # Store first 500 chars as representative
+        rep_content = full_text[:1000] if full_text else summary[:1000]  # Store first 500 chars as representative
 
-        # First ensure the main category exists
         cur.execute(
             "INSERT OR IGNORE INTO categories(name, rep_summary, rep_vector) VALUES (?,?,?)",
             (main_category, rep_content, "[]")
         )
 
-        # Then ensure the full category path exists
         if category_name != main_category:
             cur.execute(
                 "INSERT OR IGNORE INTO categories(name, rep_summary, rep_vector) VALUES (?,?,?)",
@@ -1069,26 +1002,21 @@ def assign_category_from_summary(summary: str, full_text: str = "", threshold: f
 
         conn.commit()
 
-        # Try to get the full category path first
         cur.execute("SELECT id FROM categories WHERE name=?", (category_name,))
         row = cur.fetchone()
-
-        # If we didn't find the full path, fall back to main category
         if not row:
             cur.execute("SELECT id FROM categories WHERE name=?", (main_category,))
             row = cur.fetchone()
-            category_name = main_category  # Fall back to main category
+            category_name = main_category  
 
         print(f"CATEGORIZATION DEBUG: Database lookup - ID: {row[0] if row else 'None'}, Category: '{category_name}'")
 
-        # Return the category ID and the full category path
         return (row[0] if row else None), category_name
 
     except Exception as e:
         print(f"CATEGORIZATION ERROR: {e}")
         import traceback
         traceback.print_exc()
-        # Force smart categorization - no extension fallback
         return None, "General: Document"
 
 def analyze_content_directly(content):
@@ -1106,7 +1034,6 @@ def analyze_content_directly(content):
     print(f"CONTENT PREVIEW: {content_clean[:300]}...")
     
     try:
-        # LOAD AI MODELS FOR INTELLIGENT ANALYSIS
         print("Loading AI models for content understanding...")
         from sentence_transformers import SentenceTransformer
         import numpy as np
@@ -1148,9 +1075,7 @@ def analyze_content_directly(content):
     return None
 
 def extract_key_concepts_ai(content, model):
-    """
-    Use AI to extract the most important concepts from content.
-    """
+    
     import re
     from collections import Counter
     
@@ -1162,19 +1087,17 @@ def extract_key_concepts_ai(content, model):
         return []
     
     # Get embeddings for each sentence
-    sentence_embeddings = model.encode(sentences[:10], convert_to_numpy=True)  # Limit to first 10 sentences
+    sentence_embeddings = model.encode(sentences[:50], convert_to_numpy=True)  # Limit to first 50 sentences
     
-    # Extract meaningful words (nouns, verbs, adjectives)
+    # Extract meaningful words
     words = re.findall(r'\b[a-zA-Z]{3,}\b', content.lower())
     word_freq = Counter(words)
     
-    # Filter out common words and get meaningful terms
     common_words = {'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'man', 'new', 'now', 'old', 'see', 'two', 'way', 'who', 'boy', 'did', 'its', 'let', 'put', 'say', 'she', 'too', 'use'}
     
     meaningful_words = [(word, count) for word, count in word_freq.most_common(20) 
                        if word not in common_words and len(word) > 3]
     
-    # Return top concepts
     return [word for word, count in meaningful_words[:10]]
 
 def discover_category_semantically(content, embedding, key_concepts, model):
@@ -1183,30 +1106,24 @@ def discover_category_semantically(content, embedding, key_concepts, model):
     """
     from sklearn.metrics.pairwise import cosine_similarity
     
-    # DYNAMIC CATEGORY DISCOVERY based on content analysis
     content_lower = content.lower()
     
-    # Analyze content semantically to understand its nature
     content_nature = analyze_content_nature_ai(content, key_concepts)
     print(f"AI CONTENT NATURE: {content_nature}")
     
     if content_nature:
         return content_nature
     
-    # Use semantic similarity against dynamic prototypes
     category_prototypes = generate_dynamic_prototypes(key_concepts, content)
     
     if not category_prototypes:
         return None
     
-    # Encode prototypes and find best match
     prototype_texts = list(category_prototypes.values())
     prototype_embeddings = model.encode(prototype_texts, convert_to_numpy=True)
     
-    # Calculate semantic similarity
     similarities = cosine_similarity(embedding, prototype_embeddings)[0]
     
-    # Find best match
     best_match_idx = np.argmax(similarities)
     best_similarity = similarities[best_match_idx]
     
@@ -1215,7 +1132,6 @@ def discover_category_semantically(content, embedding, key_concepts, model):
     
     print(f"SEMANTIC SIMILARITY: {best_category} (confidence: {best_similarity:.3f})")
     
-    # Only return if confidence is reasonable
     if best_similarity > 0.4:
         return best_category
     
@@ -1232,7 +1148,6 @@ def analyze_content_nature_ai(content, key_concepts):
     # AI-powered content nature analysis - COMPREHENSIVE CATEGORIES
     nature_indicators = {}
     
-    # FINANCIAL DOCUMENTS
     financial_patterns = [
         r'(?:invoice|bill)\s*(?:number|#|no\.?)\s*:?\s*\w+',
         r'amount\s*:?\s*[₹$€£¥]\s*[\d,]+',
@@ -1247,7 +1162,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if financial_score >= 2:
         nature_indicators['Finance'] = financial_score * 3
     
-    # FOOD & RECIPES
     recipe_patterns = [
         r'ingredients?\s*:',
         r'(?:prep|cook|total)\s+time\s*:?\s*\d+',
@@ -1262,7 +1176,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if recipe_score >= 2:
         nature_indicators['Food'] = recipe_score * 3
     
-    # PERSONAL & DIARY
     personal_patterns = [
         r'(?:i\s+(?:woke|went|feel|think|had|did|was|am|will))',
         r'(?:my\s+(?:morning|day|routine|thoughts|feelings|life))',
@@ -1277,7 +1190,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if personal_score >= 2:
         nature_indicators['Personal'] = personal_score * 3
     
-    # TECHNICAL & PROGRAMMING
     technical_patterns = [
         r'(?:function|class|def|import|#include|public|private)',
         r'(?:algorithm|methodology|implementation|architecture)',
@@ -1292,7 +1204,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if technical_score >= 2:
         nature_indicators['Technical'] = technical_score * 3
     
-    # ACADEMIC & RESEARCH
     academic_patterns = [
         r'(?:abstract|introduction|methodology|results|conclusion)',
         r'(?:research|study|experiment|hypothesis|thesis)',
@@ -1307,7 +1218,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if academic_score >= 2:
         nature_indicators['Academic'] = academic_score * 3
     
-    # WORK & BUSINESS
     work_patterns = [
         r'(?:meeting|agenda)\s+(?:minutes|notes?)',
         r'attendees?\s*:',
@@ -1322,7 +1232,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if work_score >= 2:
         nature_indicators['Work'] = work_score * 3
     
-    # HEALTH & MEDICAL
     health_patterns = [
         r'(?:patient|doctor|physician|nurse|hospital)',
         r'(?:diagnosis|treatment|medication|prescription)',
@@ -1337,7 +1246,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if health_score >= 2:
         nature_indicators['Health'] = health_score * 3
     
-    # LEGAL DOCUMENTS
     legal_patterns = [
         r'(?:contract|agreement|terms|conditions)',
         r'(?:legal|law|clause|party|liability)',
@@ -1352,7 +1260,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if legal_score >= 2:
         nature_indicators['Legal'] = legal_score * 3
     
-    # TRAVEL & TRANSPORTATION
     travel_patterns = [
         r'(?:flight|airline|airport|boarding|departure)',
         r'(?:hotel|reservation|booking|check.?in|check.?out)',
@@ -1367,7 +1274,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if travel_score >= 2:
         nature_indicators['Travel'] = travel_score * 3
     
-    # EDUCATION & LEARNING
     education_patterns = [
         r'(?:course|class|lesson|lecture|tutorial)',
         r'(?:student|teacher|professor|instructor)',
@@ -1382,7 +1288,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if education_score >= 2:
         nature_indicators['Education'] = education_score * 3
     
-    # ENTERTAINMENT & MEDIA
     entertainment_patterns = [
         r'(?:movie|film|cinema|theater|show)',
         r'(?:music|song|album|artist|concert)',
@@ -1397,7 +1302,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if entertainment_score >= 2:
         nature_indicators['Entertainment'] = entertainment_score * 3
     
-    # REAL ESTATE & PROPERTY
     realestate_patterns = [
         r'(?:house|home|apartment|condo|property)',
         r'(?:rent|lease|mortgage|loan|down\s+payment)',
@@ -1412,7 +1316,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if realestate_score >= 2:
         nature_indicators['RealEstate'] = realestate_score * 3
     
-    # SHOPPING & RETAIL
     shopping_patterns = [
         r'(?:shopping|store|retail|purchase|buy)',
         r'(?:price|cost|discount|sale|coupon)',
@@ -1427,7 +1330,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if shopping_score >= 2:
         nature_indicators['Shopping'] = shopping_score * 3
     
-    # COMMUNICATION & CORRESPONDENCE
     comm_patterns = [
         r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
         r'(?:dear|hi|hello|regards|sincerely|best)',
@@ -1442,7 +1344,6 @@ def analyze_content_nature_ai(content, key_concepts):
     if comm_score >= 2:
         nature_indicators['Communication'] = comm_score * 2
     
-    # INSURANCE & BENEFITS
     insurance_patterns = [
         r'(?:insurance|policy|premium|deductible)',
         r'(?:claim|coverage|benefit|copay)',
@@ -1469,54 +1370,46 @@ def analyze_content_nature_ai(content, key_concepts):
 def generate_dynamic_prototypes(key_concepts, content):
     """
     Generate dynamic category prototypes ONLY for meaningful concept clusters.
-    No random single-word categories.
     """
     if not key_concepts or len(key_concepts) < 2:
         print(f"INSUFFICIENT CONCEPTS FOR PROTOTYPING: {key_concepts}")
         return {}
     
-    # Create dynamic prototypes ONLY for meaningful concept clusters
     prototypes = {}
     concept_str = ' '.join(key_concepts).lower()
     
     print(f"ANALYZING CONCEPT CLUSTER: {concept_str}")
     
-    # Business/Finance concepts - need multiple related terms
     finance_terms = ['invoice', 'payment', 'amount', 'bill', 'cost', 'price', 'financial', 'money', 'total', 'due']
     finance_matches = sum(1 for term in finance_terms if term in concept_str)
     if finance_matches >= 2:
         prototypes['Finance: Transaction'] = 'invoice payment billing amount cost financial transaction'
         print(f"FINANCE PROTOTYPE: {finance_matches} matches")
     
-    # Food/Recipe concepts - need multiple related terms
     food_terms = ['recipe', 'ingredients', 'cooking', 'food', 'dish', 'meal', 'preparation', 'cook', 'kitchen']
     food_matches = sum(1 for term in food_terms if term in concept_str)
     if food_matches >= 2:
         prototypes['Food: Recipe'] = 'recipe cooking ingredients food preparation meal dish'
         print(f"FOOD PROTOTYPE: {food_matches} matches")
     
-    # Personal/Diary concepts - need multiple related terms
     personal_terms = ['personal', 'daily', 'routine', 'morning', 'diary', 'journal', 'thoughts', 'feelings']
     personal_matches = sum(1 for term in personal_terms if term in concept_str)
     if personal_matches >= 2:
         prototypes['Personal: Journal'] = 'personal diary journal daily routine thoughts feelings'
         print(f"PERSONAL PROTOTYPE: {personal_matches} matches")
     
-    # Work/Business concepts - need multiple related terms
     work_terms = ['meeting', 'project', 'team', 'business', 'work', 'agenda', 'professional', 'company']
     work_matches = sum(1 for term in work_terms if term in concept_str)
     if work_matches >= 2:
         prototypes['Work: Professional'] = 'meeting project team business work professional agenda'
         print(f"WORK PROTOTYPE: {work_matches} matches")
     
-    # Technical concepts - need multiple related terms
     tech_terms = ['system', 'algorithm', 'technical', 'software', 'development', 'programming', 'code', 'computer']
     tech_matches = sum(1 for term in tech_terms if term in concept_str)
     if tech_matches >= 2:
         prototypes['Technical: Documentation'] = 'technical system software development algorithm programming'
         print(f"TECH PROTOTYPE: {tech_matches} matches")
     
-    # Academic concepts - need multiple related terms
     academic_terms = ['research', 'study', 'analysis', 'methodology', 'academic', 'experiment', 'hypothesis']
     academic_matches = sum(1 for term in academic_terms if term in concept_str)
     if academic_matches >= 2:
@@ -1685,28 +1578,23 @@ def intelligent_content_clustering(content, embedding):
         from sklearn.feature_extraction.text import TfidfVectorizer
         import re
         
-        # Extract sentences for clustering analysis
         sentences = re.split(r'[.!?]+', content)
         sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
         
         if len(sentences) < 2:
             return None
         
-        # Use TF-IDF to find the most important terms
         vectorizer = TfidfVectorizer(max_features=50, stop_words='english', ngram_range=(1, 2))
         tfidf_matrix = vectorizer.fit_transform(sentences)
         
-        # Get feature names (important terms)
         feature_names = vectorizer.get_feature_names_out()
         
-        # Get the most important terms
         mean_scores = tfidf_matrix.mean(axis=0).A1
         top_indices = mean_scores.argsort()[-10:][::-1]
         top_terms = [feature_names[i] for i in top_indices if mean_scores[i] > 0.1]
         
         print(f"AI DISCOVERED TOP TERMS: {top_terms}")
         
-        # Use top terms to intelligently determine category
         if top_terms:
             category = categorize_from_ai_terms(top_terms, content)
             return category
@@ -1725,7 +1613,6 @@ def categorize_from_ai_terms(top_terms, content):
     
     print(f"EVALUATING COMPREHENSIVE AI TERMS: {terms_str}")
     
-    # Only create categories if we find MEANINGFUL clusters of related terms
     if any(term in terms_str for term in ['invoice', 'payment', 'bill', 'amount', 'cost', 'financial', 'budget', 'expense', 'revenue', 'tax']):
         return "Finance: AI Detected Financial"
     
@@ -1772,23 +1659,18 @@ def categorize_from_ai_terms(top_terms, content):
         return "Communication: AI Detected Message"
     
     else:
-        # DON'T create random categories from single words
         print(f"AI TERMS TOO VAGUE FOR COMPREHENSIVE CATEGORIES: {top_terms} - FAILING CATEGORIZATION")
         return None
 
 def understand_content_meaning(content):
-    """
-    Actually read and understand what the content is about.
-    """
+   
     import re
     
-    # Convert to lowercase for analysis but keep original for context
     content_lower = content.lower()
     lines = content.split('\n')
     
     print(f"READING CONTENT: {len(lines)} lines")
     
-    # FINANCIAL DOCUMENTS - Look for actual financial indicators
     financial_indicators = 0
     if re.search(r'invoice\s*(?:number|#|no\.?)\s*:?\s*\w+', content_lower):
         financial_indicators += 3
@@ -1809,7 +1691,6 @@ def understand_content_meaning(content):
         print("IDENTIFIED: Financial Document (Invoice)")
         return "Finance: Invoice"
     
-    # RECIPE/FOOD - Look for actual recipe structure
     recipe_indicators = 0
     if re.search(r'ingredients?\s*:?', content_lower):
         recipe_indicators += 3
@@ -1831,7 +1712,6 @@ def understand_content_meaning(content):
         print("IDENTIFIED: Recipe")
         return "Food: Recipe"
     
-    # PERSONAL DIARY/LOG - Look for personal writing patterns
     personal_indicators = 0
     if re.search(r'(?:woke up|morning routine|went to bed)', content_lower):
         personal_indicators += 3
@@ -1849,7 +1729,6 @@ def understand_content_meaning(content):
         print("IDENTIFIED: Personal Notes/Diary")
         return "Personal: Daily Log"
     
-    # MEETING MINUTES - Look for meeting structure
     meeting_indicators = 0
     if re.search(r'(?:meeting|agenda|minutes)', content_lower):
         meeting_indicators += 2
@@ -1870,7 +1749,6 @@ def understand_content_meaning(content):
         print("IDENTIFIED: Meeting Minutes")
         return "Work: Meeting"
     
-    # TECHNICAL/CODE - Look for actual code patterns
     code_indicators = 0
     if re.search(r'(?:function|class|def|import|#include)', content_lower):
         code_indicators += 3
@@ -1888,7 +1766,6 @@ def understand_content_meaning(content):
         print("IDENTIFIED: Technical Document")
         return "Technical: Documentation"
     
-    # ACADEMIC/RESEARCH - Look for academic structure
     academic_indicators = 0
     if re.search(r'(?:abstract|introduction|methodology|results|conclusion)', content_lower):
         academic_indicators += 3
@@ -1902,7 +1779,6 @@ def understand_content_meaning(content):
         print("IDENTIFIED: Academic Paper")
         return "Academic: Research Paper"
     
-    # BUSINESS DOCUMENT - Look for business language
     business_indicators = 0
     if re.search(r'(?:company|business|revenue|profit|strategy)', content_lower):
         business_indicators += 2
@@ -1926,10 +1802,8 @@ def careful_keyword_analysis(content_lower, original_content):
     """
     print("PERFORMING CAREFUL KEYWORD ANALYSIS")
     
-    # Count meaningful keywords with context
     keyword_scores = {}
     
-    # Education - Academic content (check FIRST to catch exam documents before news)
     education_keywords = ['exam', 'test', 'student', 'course', 'lecture', 'assignment', 'grade', 
                          'university', 'college', 'school', 'academic', 'hall ticket', 'admission',
                          'roll number', 'candidate', 'examination', 'semester', 'marks', 'result',
@@ -1939,10 +1813,9 @@ def careful_keyword_analysis(content_lower, original_content):
                          'candidate name', 'seating number', 'exam date', 'reporting time', 'test centre']
     education_score = sum(1 for word in education_keywords if word in content_lower)
     if education_score > 0:
-        keyword_scores['Education'] = education_score * 1.2  # Higher weight for education
+        keyword_scores['Education'] = education_score * 1.2 
         print(f"Education score: {education_score} (weighted: {education_score * 1.2})")
     
-    # News/Media - Check AFTER education to avoid conflicts
     news_keywords = ['breaking news', 'news report', 'journalist', 'reporter', 'media coverage', 'press conference',
                     'headline', 'news article', 'story coverage', 'news interview', 'news statement',
                     'press release', 'news bulletin', 'news update', 'news alert',
@@ -1954,7 +1827,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['News'] = news_score
         print(f"News score: {news_score}")
     
-    # Government/Administrative - Check BEFORE legal to catch govt documents
     govt_keywords = ['government notification', 'ministry', 'department', 'bureau', 'commission',
                     'authority', 'board', 'committee', 'council', 'assembly', 'parliament',
                     'legislature', 'cabinet', 'minister', 'secretary', 'officer', 'official',
@@ -1963,10 +1835,9 @@ def careful_keyword_analysis(content_lower, original_content):
                     'gazette', 'ordinance', 'resolution', 'budget', 'allocation', 'fund']
     govt_score = sum(1 for word in govt_keywords if word in content_lower)
     if govt_score > 0:
-        keyword_scores['Government'] = govt_score * 1.1  # Slight boost for official documents
+        keyword_scores['Government'] = govt_score * 1.1  
         print(f"Government score: {govt_score} (weighted: {govt_score * 1.1})")
     
-    # Legal/Judicial - More specific legal terms to avoid over-matching
     legal_keywords = ['honorable court', 'court hereby orders', 'verdict', 'ruling', 'judgment', 
                      'lawsuit', 'litigation', 'hearing', 'trial', 'proceeding', 'petition',
                      'appeal', 'writ', 'summons', 'subpoena', 'affidavit', 'testimony', 'witness',
@@ -1976,10 +1847,9 @@ def careful_keyword_analysis(content_lower, original_content):
                      'case no', 'criminal case', 'civil case', 'family court', 'high court']
     legal_score = sum(1 for word in legal_keywords if word in content_lower)
     if legal_score > 0:
-        keyword_scores['Legal'] = legal_score * 1.15  # Higher weight for legal documents
+        keyword_scores['Legal'] = legal_score * 1.15 
         print(f"Legal score: {legal_score} (weighted: {legal_score * 1.15})")
     
-    # Finance - Money related
     finance_keywords = ['invoice', 'bill', 'payment', 'money', 'cost', 'price', 'dollar', '$', 
                        'rupee', '₹', 'amount', 'salary', 'account', 'bank', 'transaction', 
                        'receipt', 'due date', 'total', 'tax', 'gst', 'income', 'expense',
@@ -1990,7 +1860,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Finance'] = finance_score
         print(f"Finance score: {finance_score}")
     
-    # Work/Business - Professional content (check after legal/government)
     work_keywords = ['meeting', 'project', 'deadline', 'work', 'business', 'office', 'colleague',
                     'client', 'presentation', 'report', 'task', 'professional', 'partnership',
                     'discussion', 'agenda', 'action items', 'met', 'discussed', 'corporate',
@@ -2001,7 +1870,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Work'] = work_score
         print(f"Work score: {work_score}")
     
-    # Cooking/Food - Recipes, cooking instructions, food content
     cooking_keywords = ['recipe', 'cooking', 'cook', 'ingredients', 'preparation', 'instructions',
                        'kitchen', 'food', 'dish', 'meal', 'breakfast', 'lunch', 'dinner', 'snack',
                        'bake', 'baking', 'fry', 'boil', 'grill', 'roast', 'steam', 'saute',
@@ -2015,7 +1883,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Cooking'] = cooking_score
         print(f"Cooking score: {cooking_score}")
     
-    # Entertainment - Movies, music, games, shows, fun activities
     entertainment_keywords = ['movie', 'film', 'cinema', 'theater', 'show', 'series', 'episode',
                              'music', 'song', 'album', 'artist', 'singer', 'band', 'concert',
                              'game', 'gaming', 'video game', 'play', 'player', 'entertainment',
@@ -2029,7 +1896,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Entertainment'] = entertainment_score
         print(f"Entertainment score: {entertainment_score}")
     
-    # Lifestyle/Hobbies - Personal interests, hobbies, lifestyle content
     lifestyle_keywords = ['hobby', 'interest', 'passion', 'craft', 'diy', 'handmade', 'creative',
                          'art', 'painting', 'drawing', 'sketch', 'photography', 'photo', 'picture',
                          'gardening', 'plants', 'flowers', 'garden', 'nature', 'outdoor',
@@ -2043,7 +1909,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Lifestyle'] = lifestyle_score
         print(f"Lifestyle score: {lifestyle_score}")
     
-    # Home/Household - Home management, household tasks, domestic content
     home_keywords = ['home', 'house', 'household', 'cleaning', 'organize', 'decoration', 'furniture',
                     'interior', 'design', 'renovation', 'repair', 'maintenance', 'chores',
                     'laundry', 'washing', 'grocery', 'shopping list', 'bills', 'utilities',
@@ -2056,7 +1921,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Home'] = home_score
         print(f"Home score: {home_score}")
     
-    # Personal - Enhanced personal content (for remaining personal stuff)
     personal_keywords = ['hello', 'hi', 'my name', 'personal', 'diary', 'journal', 'reminder',
                         'voice note', 'memo', 'myself', 'i am', 'family', 'friend', 'conversation',
                         'thoughts', 'feelings', 'reflection', 'private', 'confidential',
@@ -2069,27 +1933,24 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Personal'] = personal_score
         print(f"Personal score: {personal_score}")
     
-    # Research/Academic - Research papers, studies, academic work
     research_keywords = ['research', 'study', 'analysis', 'survey', 'findings', 'conclusion',
                         'methodology', 'data', 'statistics', 'evidence', 'hypothesis', 'theory',
                         'publication', 'journal', 'paper', 'article', 'citation', 'reference',
                         'abstract', 'bibliography', 'peer review', 'scholarly', 'academic']
     research_score = sum(1 for word in research_keywords if word in content_lower)
     if research_score > 0:
-        keyword_scores['Research'] = research_score * 1.1  # Slight boost for academic content
+        keyword_scores['Research'] = research_score * 1.1  
         print(f"Research score: {research_score} (weighted: {research_score * 1.1})")
     
-    # Medical - Health related
     medical_keywords = ['doctor', 'medical', 'health', 'symptoms', 'treatment', 'medicine',
                        'hospital', 'patient', 'diagnosis', 'prescription', 'appointment',
                        'clinic', 'surgery', 'therapy', 'healthcare', 'physician', 'nurse',
                        'medical report', 'test results', 'x-ray', 'scan', 'blood test']
     medical_score = sum(1 for word in medical_keywords if word in content_lower)
     if medical_score > 0:
-        keyword_scores['Medical'] = medical_score * 1.2  # Higher weight for medical content
+        keyword_scores['Medical'] = medical_score * 1.2 
         print(f"Medical score: {medical_score} (weighted: {medical_score * 1.2})")
     
-    # Property/Real Estate - Property documents, real estate
     property_keywords = ['property', 'real estate', 'land', 'plot', 'house', 'apartment', 'flat',
                         'building', 'construction', 'sale deed', 'purchase', 'registry', 'title',
                         'ownership', 'tenant', 'landlord', 'rent', 'lease', 'mortgage', 'loan',
@@ -2099,7 +1960,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Property'] = property_score
         print(f"Property score: {property_score}")
     
-    # Travel - Travel related
     travel_keywords = ['travel', 'trip', 'vacation', 'flight', 'hotel', 'destination',
                       'journey', 'booking', 'passport', 'visa', 'itinerary', 'tourism',
                       'ticket', 'reservation', 'airport', 'railway', 'bus', 'transport']
@@ -2108,7 +1968,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Travel'] = travel_score
         print(f"Travel score: {travel_score}")
     
-    # Sports - Sports content
     sports_keywords = ['sport', 'game', 'match', 'player', 'team', 'score', 'tournament',
                       'cricket', 'football', 'basketball', 'tennis', 'goal', 'win', 'competition',
                       'championship', 'league', 'stadium', 'coach', 'training', 'fitness']
@@ -2117,7 +1976,6 @@ def careful_keyword_analysis(content_lower, original_content):
         keyword_scores['Sports'] = sports_score
         print(f"Sports score: {sports_score}")
     
-    # Technology/IT - Technical documents, IT content
     tech_keywords = ['technology', 'computer', 'software', 'hardware', 'internet', 'website',
                     'application', 'app', 'system', 'database', 'server', 'network',
                     'programming', 'code', 'development', 'digital', 'online', 'cyber',
@@ -2131,10 +1989,8 @@ def careful_keyword_analysis(content_lower, original_content):
         print("No meaningful keywords found")
         return None
     
-    # Get the highest scoring category
     best_category = max(keyword_scores.items(), key=lambda x: x[1])
     
-    # Require at least 2 keyword matches for confidence
     if best_category[1] >= 2:
         subcategory = get_smart_subcategory(content_lower, best_category[0])
         result = f"{best_category[0]}: {subcategory}"
@@ -2166,7 +2022,6 @@ def analyze_content_themes(content, embedding, model):
     import re
     from collections import Counter
     
-    # EXTRACT MEANINGFUL PHRASES (2-3 word combinations)
     words = re.findall(r'\b[a-zA-Z]{3,}\b', content.lower())
     
     # IDENTIFY DOCUMENT STRUCTURE PATTERNS
@@ -2183,35 +2038,27 @@ def analyze_content_themes(content, embedding, model):
     word_freq = Counter(words)
     top_words = [word for word, count in word_freq.most_common(10) if len(word) > 3]
     
-    # BUSINESS/FINANCE INDICATORS
     business_terms = {'business', 'company', 'revenue', 'profit', 'sales', 'market', 'strategy', 'management', 'financial', 'budget', 'cost', 'price', 'payment', 'customer', 'client'}
     business_score = sum(1 for word in top_words if word in business_terms)
     
-    # TECHNICAL INDICATORS  
     tech_terms = {'system', 'software', 'algorithm', 'development', 'programming', 'code', 'technical', 'computer', 'data', 'analysis', 'implementation', 'design', 'architecture', 'framework'}
     tech_score = sum(1 for word in top_words if word in tech_terms)
     
-    # ACADEMIC INDICATORS
     academic_terms = {'research', 'study', 'analysis', 'methodology', 'results', 'conclusion', 'abstract', 'introduction', 'literature', 'experiment', 'hypothesis', 'findings'}
     academic_score = sum(1 for word in top_words if word in academic_terms)
     
-    # PERSONAL INDICATORS
     personal_terms = {'personal', 'diary', 'journal', 'thoughts', 'feelings', 'daily', 'routine', 'morning', 'evening', 'today', 'yesterday', 'tomorrow'}
     personal_score = sum(1 for word in top_words if word in personal_terms)
     
-    # FOOD/RECIPE INDICATORS
     food_terms = {'recipe', 'ingredients', 'cooking', 'cook', 'preparation', 'serve', 'dish', 'meal', 'food', 'kitchen', 'minutes', 'temperature'}
     food_score = sum(1 for word in top_words if word in food_terms)
     
-    # LEGAL INDICATORS
     legal_terms = {'contract', 'agreement', 'legal', 'terms', 'conditions', 'clause', 'party', 'liability', 'rights', 'obligations', 'law', 'regulation'}
     legal_score = sum(1 for word in top_words if word in legal_terms)
     
-    # HEALTH/MEDICAL INDICATORS
     health_terms = {'health', 'medical', 'patient', 'treatment', 'diagnosis', 'symptoms', 'medicine', 'therapy', 'doctor', 'hospital', 'care', 'wellness'}
     health_score = sum(1 for word in top_words if word in health_terms)
     
-    # DETERMINE CATEGORY BASED ON HIGHEST SCORE
     scores = {
         'Business: Document': business_score,
         'Technical: Documentation': tech_score,
@@ -2226,7 +2073,7 @@ def analyze_content_themes(content, embedding, model):
     
     # REQUIRE MINIMUM CONFIDENCE
     best_category = max(scores.items(), key=lambda x: x[1])
-    if best_category[1] >= 2:  # At least 2 matching terms
+    if best_category[1] >= 2: 
         return best_category[0]
     
     # 3. DETECT BY CONTENT PATTERNS
@@ -2242,26 +2089,21 @@ def detect_content_patterns(content):
     """
     import re
     
-    # EMAIL PATTERNS
     if re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', content):
         if any(word in content.lower() for word in ['meeting', 'schedule', 'agenda']):
             return "Communication: Meeting Email"
         return "Communication: Email"
     
-    # CODE PATTERNS
     if re.search(r'(function|class|def|import|#include|public|private)', content, re.I):
         return "Technical: Source Code"
     
-    # FINANCIAL PATTERNS
     if re.search(r'[\$₹€£¥]\s*\d+|amount.*\d+|total.*\d+', content, re.I):
         return "Finance: Financial Document"
     
-    # TIME-BASED PATTERNS (schedules, logs)
     if re.search(r'\d{1,2}:\d{2}|\d{1,2}[ap]m|morning|afternoon|evening', content, re.I):
         if any(word in content.lower() for word in ['log', 'diary', 'routine', 'schedule']):
             return "Personal: Daily Log"
     
-    # LIST PATTERNS (todos, instructions)
     lines = content.split('\n')
     list_indicators = sum(1 for line in lines if re.match(r'^\s*[-*•]\s+|^\s*\d+\.\s+', line.strip()))
     if list_indicators >= 3:
@@ -2273,9 +2115,6 @@ def detect_content_patterns(content):
     return None
 
 def intelligent_keyword_analysis(content_lower):
-    """
-    Fallback intelligent keyword analysis with adaptive scoring.
-    """
     # DYNAMIC KEYWORD CATEGORIES - More flexible
     keyword_categories = {
         "Finance": ['invoice', 'bill', 'payment', 'amount', 'total', 'due', 'customer', 'billing', 'cost', 'price', 'budget', 'expense', 'revenue'],
@@ -2301,12 +2140,9 @@ def intelligent_keyword_analysis(content_lower):
     if not scores:
         return None
     
-    # GET BEST MATCH
     best_category = max(scores.items(), key=lambda x: x[1])
     
-    # REQUIRE REASONABLE CONFIDENCE
     if best_category[1] >= 1:
-        # CREATE SMART SUBCATEGORY
         subcategory = determine_subcategory(content_lower, best_category[0])
         return f"{best_category[0]}: {subcategory}"
     
@@ -2369,9 +2205,9 @@ def determine_subcategory(content, main_category):
     else:
         return "Document"
     
-# --- API ---
+# API 
 @app.post("/scan_folder")
-def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
+def scan_folder(timeout: int = 30): 
     print("=== Starting COMPREHENSIVE AI scan_folder() endpoint ===")
     import threading
     import time
@@ -2382,7 +2218,6 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
     def scan_worker():
         nonlocal result, exception
         try:
-            # Check if sample directory exists
             print(f"Checking if sample directory exists: {SAMPLE_DIR}")
             if not os.path.exists(SAMPLE_DIR):
                 print(f"ERROR: Sample directory {SAMPLE_DIR} does not exist")
@@ -2448,7 +2283,6 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                     summary = ""
 
                     try:
-                        # Extract text based on file type
                         if ext == ".txt":
                             text = read_text_file(path)
                             print(f"Extracted {len(text)} characters from text file")
@@ -2461,28 +2295,23 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                         elif ext in {".png", ".jpg", ".jpeg"}:
                             text = extract_text_from_image(path)
                             print(f"Extracted {len(text)} characters from image OCR")
-                            # Also get image classification
                             tags = [classify_image(path)]
                         elif ext in {".mp3", ".wav"}:
                             transcript = transcribe_audio(path)
                             text = transcript
                             print(f"Transcribed {len(transcript)} characters from audio")
                         else:
-                            # Try reading as text for other formats
                             text = read_text_file(path)
                             print(f"Extracted {len(text)} characters from file")
 
-                        # Generate summary using AI
                         if text.strip():
                             summary = summarize_text(text)
                             print(f"Generated summary: {len(summary)} characters")
 
-                            # Use AI to categorize based on content
                             try:
                                 cat_id, category_name = assign_category_from_summary(summary, text)
                                 print(f"AI categorized as: {category_name} (ID: {cat_id})")
                                 
-                                # If we got a category ID, use it; otherwise, fall back to name lookup
                                 if not cat_id and category_name:
                                     cur.execute("SELECT id FROM categories WHERE name=?", (category_name,))
                                     cat_row = cur.fetchone()
@@ -2491,18 +2320,16 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                                         print(f"Found category ID {cat_id} for name '{category_name}'")
                                 
                                 # Extract and store entities if we have text
-                                if len(text) > 100:  # Only for substantial content
+                                if len(text) > 100: 
                                     entity_info = extract_and_store_entities(conn, file_id, text)
                                     print(f"Extracted {entity_info['unique']} unique entities")
                                     
                             except Exception as cat_error:
                                 print(f"Error in category assignment: {cat_error}")
-                                # Force smart categorization - no extension fallback
                                 category_name = "General: Document"
                                 print(f"Using default smart category: {category_name}")
                                 cat_id = None
                         
-                        # Force smart categorization - ensure we have content-based category
                         if not text.strip() or not category_name or category_name == "Uncategorized":
                             category_name = "General: Document"
                             print(f"Using default smart category for empty content: {category_name}")
@@ -2510,18 +2337,14 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
 
                     except Exception as content_error:
                         print(f"ERROR in content analysis for {fname}: {content_error}")
-                        # Force smart categorization - no extension fallback
                         category_name = "General: Document"
                         print(f"Using default smart category for error: {category_name}")
 
-                    # Update file with comprehensive analysis results
                     try:
-                        # Force smart categorization - no extension-based fallback
                         if not category_name or category_name == "Uncategorized":
                             category_name = "General: Document"
                             print(f"Using final default smart category: {category_name}")
                                 
-                        # If we don't have a category ID but have a name, try to look it up
                         if not cat_id and category_name:
                             cur.execute("SELECT id FROM categories WHERE name=?", (category_name,))
                             cat_row = cur.fetchone()
@@ -2529,7 +2352,6 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                                 cat_id = cat_row[0]
                                 print(f"Found category ID {cat_id} for name '{category_name}'")
                             else:
-                                # If category doesn't exist, create it
                                 cur.execute(
                                     "INSERT INTO categories(name, rep_summary, rep_vector) VALUES (?,?,?)",
                                     (category_name, summary[:500] if summary else "", "[]")
@@ -2537,10 +2359,8 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                                 cat_id = cur.lastrowid
                                 print(f"Created new category: {category_name} (ID: {cat_id})")
                         
-                        # Debug output
                         print(f"Final category before DB update - Name: '{category_name}', ID: {cat_id}")
                         
-                        # Update the file record with the analysis results
                         cur.execute("""UPDATE files
                                        SET summary=?, proposed_label=?, category_id=?, full_text=?, tags=?
                                        WHERE id=?""",
@@ -2553,7 +2373,6 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                         conn.commit()
                         print(f"File metadata updated successfully with AI analysis. Category: {category_name}")
                         
-                        # Verify the update
                         cur.execute("SELECT proposed_label, category_id FROM files WHERE id=?", (file_id,))
                         updated = cur.fetchone()
                         if updated:
@@ -2566,7 +2385,7 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
                     processed_files.append({
                         "file": fname,
                         "category": category_name,
-                        "summary": summary[:200] + "..." if len(summary) > 200 else summary,  # Truncate for display
+                        "summary": summary[:200] + "..." if len(summary) > 200 else summary,  
                         "transcript_len": len(text) if text else 0,
                         "tags": tags if 'tags' in locals() else []
                     })
@@ -2595,7 +2414,6 @@ def scan_folder(timeout: int = 30):  # Reduced to 30 seconds for simple analysis
     scan_thread.daemon = True
     scan_thread.start()
 
-    # Wait for completion with timeout
     scan_thread.join(timeout=timeout)
 
     if scan_thread.is_alive():
@@ -2613,7 +2431,6 @@ def list_proposals():
                  FROM files 
                  WHERE summary IS NOT NULL AND summary != ''""")
     rows = c.fetchall()
-    # Filter out files that no longer exist on disk
     filtered = [r for r in rows if os.path.exists(r[2])]
     return [{"id": r[0], "file": r[1], "proposed": r[3], "final": r[4]} for r in filtered]
 
@@ -2639,7 +2456,6 @@ def categories():
     """
     cur = conn.cursor()
     
-    # Get approved categories from database
     cur.execute("""
         SELECT final_label as category, COUNT(*) AS file_count, 'approved' as source
         FROM files
@@ -2648,7 +2464,6 @@ def categories():
     """)
     approved_rows = cur.fetchall()
     
-    # Get proposed categories from database
     cur.execute("""
         SELECT proposed_category as category, COUNT(*) AS file_count, 'proposed' as source
         FROM files
@@ -2660,7 +2475,6 @@ def categories():
     # Combine and deduplicate categories
     category_map = {}
     
-    # Add approved categories
     for row in approved_rows:
         category, count, source = row
         if category not in category_map:
@@ -2673,7 +2487,6 @@ def categories():
         category_map[category]["approved_count"] = count
         category_map[category]["total_count"] += count
     
-    # Add proposed categories
     for row in proposed_rows:
         category, count, source = row
         if category not in category_map:
@@ -2686,7 +2499,6 @@ def categories():
         category_map[category]["proposed_count"] = count
         category_map[category]["total_count"] += count
     
-    # Convert to list and sort by total count
     categories = list(category_map.values())
     categories.sort(key=lambda x: x["total_count"], reverse=True)
     
@@ -2694,12 +2506,7 @@ def categories():
 
 @app.get("/enhanced_categories")
 def enhanced_categories(auth_token: str | None = Query(None)):
-    """
-    Enhanced categories endpoint that includes Google Drive folder information.
-    Combines database categories with actual Drive folders.
-    """
     try:
-        # Get base categories from database
         base_categories = categories()
         
         # If we have a Drive token, also fetch Drive folder information
@@ -2707,27 +2514,21 @@ def enhanced_categories(auth_token: str | None = Query(None)):
             try:
                 drive_service = get_drive_service(auth_token)
                 if drive_service:
-                    # Get all folders in My Drive
                     results = drive_service.files().list(
                         q="mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false",
                         fields="files(id, name, createdTime, modifiedTime)"
                     ).execute()
                     
                     drive_folders = results.get('files', [])
-                    
-                    # Create a map of existing categories
                     category_map = {cat["name"]: cat for cat in base_categories}
                     
-                    # Add Drive folder information
                     for folder in drive_folders:
                         folder_name = folder["name"]
                         if folder_name in category_map:
-                            # Update existing category with Drive info
                             category_map[folder_name]["drive_folder_id"] = folder["id"]
                             category_map[folder_name]["drive_created"] = folder.get("createdTime")
                             category_map[folder_name]["has_drive_folder"] = True
                         else:
-                            # Add new category for Drive folder
                             category_map[folder_name] = {
                                 "name": folder_name,
                                 "approved_count": 0,
@@ -2738,7 +2539,6 @@ def enhanced_categories(auth_token: str | None = Query(None)):
                                 "has_drive_folder": True
                             }
                     
-                    # Convert back to list and sort
                     enhanced_categories = list(category_map.values())
                     enhanced_categories.sort(key=lambda x: x["total_count"], reverse=True)
                     
@@ -2747,7 +2547,6 @@ def enhanced_categories(auth_token: str | None = Query(None)):
             except Exception as e:
                 print(f"Error fetching Drive folders: {e}")
         
-        # Fallback to base categories if Drive access fails
         for cat in base_categories:
             cat["has_drive_folder"] = False
         
@@ -2755,7 +2554,6 @@ def enhanced_categories(auth_token: str | None = Query(None)):
         
     except Exception as e:
         print(f"Error in enhanced_categories: {e}")
-        # Return empty list if everything fails
         return []
 
 @app.get("/categories_with_files")
@@ -2812,7 +2610,6 @@ def file_summary(file_id: int):
 def ask(file_id: int = Query(...), q: str = Query(...)):
     cur = conn.cursor()
     
-    # Get file information from database
     cur.execute("SELECT file_path, file_name, full_text FROM files WHERE id=?", (file_id,))
     row = cur.fetchone()
     
@@ -2821,19 +2618,16 @@ def ask(file_id: int = Query(...), q: str = Query(...)):
     
     file_path, file_name, full_text = row
     
-    # If we already have text content, use it
     if full_text and full_text.strip():
         print(f"Using pre-extracted text for {file_name} ({len(full_text)} chars)")
     ans = nlp.best_answer(q, full_text)
     return {"ok": True, "answer": ans.get("answer", ""), "score": ans.get("score", 0), "context": ans.get("context", "")}
     
-    # If no text content, try to extract it in real-time
     if not file_path or not os.path.exists(file_path):
         return {"ok": False, "error": "original file not accessible (re-run scan)"}
     
     print(f"Performing real-time text extraction for {file_name}")
     
-    # Determine file type and extract text
     ext = os.path.splitext(file_path)[1].lower()
     extracted_text = ""
     
@@ -2859,7 +2653,6 @@ def ask(file_id: int = Query(...), q: str = Query(...)):
         
         print(f"Successfully extracted {len(extracted_text)} characters from {file_name}")
         
-        # Update the database with the extracted text for future use
         try:
             cur.execute("UPDATE files SET full_text=? WHERE id=?", (extracted_text, file_id))
             conn.commit()
@@ -2867,7 +2660,6 @@ def ask(file_id: int = Query(...), q: str = Query(...)):
         except Exception as e:
             print(f"Warning: Could not update database with extracted text: {e}")
         
-        # Generate answer using the extracted text
         ans = nlp.best_answer(q, extracted_text)
         return {"ok": True, "answer": ans.get("answer", ""), "score": ans.get("score", 0), "context": ans.get("context", "")}
         
@@ -2891,9 +2683,7 @@ def reindex():
     except:
         return {"status": "reindexed", "message": "Indexer service not available"}
 
-
-
-# --- Google Drive integration ---
+#Google Drive integration
 @app.post("/organize_drive_files")
 def organize_drive_files(req: OrganizeDriveFilesRequest):
     """Accepts a list of Google Drive file metadata, classifies them, and
@@ -2914,7 +2704,6 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
             print(f"Error initializing Drive service: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to initialize Google Drive service: {str(e)}")
 
-    # USE SMART CONTENT ANALYSIS FOR EACH FILE
     for f in req.files:
         # Skip folders entirely
         if (f.mimeType or "").strip() == 'application/vnd.google-apps.folder':
@@ -2923,14 +2712,12 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
         file_name = f.name or ""
         print(f"ANALYZING FILE: {file_name}")
 
-        # SMART CATEGORIZATION WITH CONTENT ANALYSIS
         try:
             if req.override_category:
                 category_name = req.override_category
                 category_id = None
                 print(f"Using override category: {category_name}")
             else:
-                # DOWNLOAD AND ANALYZE FILE CONTENT
                 print(f"Downloading file for content analysis...")
                 path = drive_download_file(req.auth_token, f.id, tempfile.gettempdir())
                 if not path:
@@ -2938,7 +2725,6 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                     category_name = "DOWNLOAD_FAILED"
                     category_id = None
                 else:
-                    # EXTRACT TEXT AND CATEGORIZE
                     ext = os.path.splitext(file_name)[1].lower()
                     text = ""
                     if ext == ".txt":
@@ -2961,7 +2747,6 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                         
                     print(f"Extracted {len(text) if text else 0} chars from {file_name}")
                     
-                    # USE SMART CATEGORIZATION
                     if text and len(text.strip()) > 10:
                         cat_id, category_name = assign_category_from_summary("", text)
                         if category_name == "CATEGORIZATION_FAILED":
@@ -2978,7 +2763,6 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
                     
                     category_id = None
                     
-                    # Clean up downloaded file
                     try:
                         os.remove(path)
                     except:
@@ -2993,10 +2777,8 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
         target_folder_id = None
         moved = None
         if req.move and drive_service:
-            # Ensure folder is created in My Drive root (no parent) OR allow future parent selection
             target_folder_id = get_or_create_folder(drive_service, (req.override_category or category_name or "Other"), None)
             if target_folder_id:
-                # Actually move the file to the target folder
                 moved = move_file_to_folder(drive_service, f.id, target_folder_id)
                 if moved and moved.get('id'):
                     move_performed = True
@@ -3012,7 +2794,7 @@ def organize_drive_files(req: OrganizeDriveFilesRequest):
             "target_folder_id": target_folder_id,
             "mimeType": f.mimeType,
             "parents": f.parents or [],
-            "summary": ""  # No summary for simple mode
+            "summary": "" 
         })
 
     return {"organized_files": organized, "move_performed": move_performed}
@@ -3052,7 +2834,6 @@ def drive_find_similar(file_id: str, auth_token: str):
         raise HTTPException(status_code=400, detail="Failed to download file from Drive")
     try:
         similar_files = []
-        # TO DO: implement similar file search logic
         return {"similar_files": similar_files}
     finally:
         try:
@@ -3076,7 +2857,7 @@ def drive_extract_insights(file_id: str, auth_token: str):
         except Exception:
             pass
 
-# --- Smart Search functionality ---
+#Smart Search functionality 
 import difflib
 import re
 from collections import defaultdict
@@ -3092,13 +2873,11 @@ def smart_search_in_text(text_content, query):
     text_lower = text_content.lower()
     query_lower = query.lower().strip()
     
-    # Split query into words for multi-word search
     query_words = query_lower.split()
     
-    # Different search strategies with scores
     search_results = []
     
-    # 1. Exact match (highest score)
+    # 1. Exact match 
     if query_lower in text_lower:
         match_index = text_lower.find(query_lower)
         context = extract_context(text_content, match_index, len(query))
@@ -3143,16 +2922,16 @@ def smart_search_in_text(text_content, query):
                 for pos in word_positions[fuzzy_word]:
                     context = extract_context(text_content, pos, len(fuzzy_word))
                     search_results.append({
-                        'score': similarity * 0.8,  # Reduce score for fuzzy matches
+                        'score': similarity * 0.8,  
                         'position': pos,
                         'context': context,
                         'match_type': 'fuzzy',
                         'matched_text': fuzzy_word
                     })
     
-    # 4. Partial word matching (contains)
+    # 4. Partial word matching 
     for query_word in query_words:
-        if len(query_word) >= 4:  # Only for longer words
+        if len(query_word) >= 4:  
             for word in words:
                 if query_word in word and len(word) >= len(query_word):
                     similarity = len(query_word) / len(word)
@@ -3186,7 +2965,6 @@ def smart_search_in_text(text_content, query):
     if not unique_results:
         return None
     
-    # Return the best match
     best_match = max(unique_results.values(), key=lambda x: x['score'])
     return best_match
 
@@ -3207,8 +2985,6 @@ def extract_context(text, position, match_length):
 def find_proximity_matches(text_lower, query_words, word_positions):
     """Find matches where query words appear close to each other."""
     matches = []
-    
-    # Find positions of all query words
     word_pos_lists = []
     for word in query_words:
         fuzzy_matches = difflib.get_close_matches(word, word_positions.keys(), n=3, cutoff=0.8)
@@ -3223,7 +2999,7 @@ def find_proximity_matches(text_lower, query_words, word_positions):
             for pos2 in word_pos_lists[1]:
                 distance = abs(pos1 - pos2)
                 if distance <= 50:  # Words within 50 characters
-                    score = 0.7 * (1 - distance / 50)  # Closer = higher score
+                    score = 0.7 * (1 - distance / 50)  
                     context_pos = min(pos1, pos2)
                     context = extract_context(text_lower, context_pos, distance + 10)
                     matches.append({
@@ -3237,7 +3013,6 @@ def find_proximity_matches(text_lower, query_words, word_positions):
     return matches
 
 def find_synonym_matches(text_lower, query_words, word_positions):
-    """Basic synonym matching for common words."""
     synonyms = {
         'document': ['doc', 'file', 'paper', 'report'],
         'project': ['task', 'work', 'assignment', 'job'],
@@ -3268,7 +3043,7 @@ def find_synonym_matches(text_lower, query_words, word_positions):
     
     return matches
 
-# --- Search functionality ---
+#Search functionality 
 class SearchRequest(BaseModel):
     query: str
     use_semantic: bool = True  # Enable semantic search by default
@@ -3276,7 +3051,6 @@ class SearchRequest(BaseModel):
     min_score: float = 0.2  # Minimum confidence score (0-1)
     top_k: int = 10  # Maximum number of results to return
 
-# Import semantic search
 from semantic_search import hybrid_search, clean_query
 import torch
 
@@ -3295,7 +3069,6 @@ def get_context_around_match(text: str, query_terms: set, window_size: int = 150
             positions.append((pos, term))
     
     if not positions:
-        # No exact match, return beginning of text
         return text[:window_size] + ('...' if len(text) > window_size else '')
     
     # Sort by position
@@ -3379,13 +3152,11 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
             try:
                 print(f"Searching in file: {file['name']}")
                 
-                # Download and extract text from the file
                 file_path = drive_download_file(token, file['id'], tempfile.gettempdir())
                 if not file_path:
                     print(f"Failed to download file: {file['name']}")
                     continue
                 
-                # Extract text based on file type
                 text_content = ""
                 file_name = file['name'].lower()
                 
@@ -3407,24 +3178,19 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
                         print(f"Failed to export Google Doc {file['name']}: {e}")
                         continue
                 elif file['mimeType'] in ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
-                    # For Word documents, try to extract text (basic implementation)
                     text_content = read_text_file(file_path)
                 elif file['mimeType'].startswith('image/') or file_name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')):
-                    # For images, extract text using OCR
                     print(f"Extracting text from image: {file['name']}")
                     text_content = extract_text_from_image(file_path)
                 elif file['mimeType'].startswith('audio/') or file_name.endswith(('.mp3', '.wav', '.m4a', '.ogg')):
-                    # For audio files, extract text using transcription
                     print(f"Transcribing audio file: {file['name']}")
                     text_content = transcribe_audio(file_path)
                 
-                # Clean up the downloaded file
                 try:
                     os.remove(file_path)
                 except Exception:
                     pass
                 
-                # Prepare document for semantic search
                 doc = {
                     'text': text_content,
                     'metadata': {
@@ -3438,10 +3204,8 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
                 
                 # Use semantic search if enabled, otherwise use traditional search
                 if req.use_semantic:
-                    # For semantic search, we'll process all files first
                     matching_files.append(doc)
                 else:
-                    # Fall back to traditional search
                     match_result = smart_search_in_text(text_content, query)
                     if match_result:
                         print(f"Found match in file: {file['name']} (score: {match_result['score']:.2f})")
@@ -3469,7 +3233,6 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
             print(f"Performing semantic search on {len(matching_files)} files...")
             
             try:
-                # Clean query for context extraction
                 clean_q = clean_query(req.query)
                 query_terms = set(clean_q.split())
                 
@@ -3481,21 +3244,16 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
                     top_k=req.top_k,
                     min_score=req.min_score
                 )
-                
-                # Format results for response
                 formatted_results = []
                 
                 for result in search_results:
                     metadata = result.get('metadata', {})
                     best_chunk = result.get('best_chunk', '')
                     
-                    # Get a better context snippet around the best matching part
                     context = get_context_around_match(
                         text=best_chunk or metadata.get('text', ''),
                         query_terms=query_terms
                     )
-                    
-                    # Calculate a confidence percentage (0-100%)
                     confidence = min(100, int(result['score'] * 100))
                     
                     formatted_results.append({
@@ -3530,40 +3288,33 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
                 
             except Exception as e:
                 print(f"Error in semantic search: {str(e)}")
-                # Fall back to keyword search if semantic search fails
                 print("Falling back to keyword search...")
                 req.use_semantic = False
-        # For non-semantic search or fallback, use keyword search
         if not req.use_semantic and matching_files:
-            # Clean query for keyword search
             clean_q = clean_query(req.query)
             query_terms = set(clean_q.split())
             
-            # Calculate scores based on term frequency
             scored_files = []
             for file in matching_files:
                 text = file.get('text', '').lower()
                 
-                # Simple term frequency scoring
                 if query_terms:
                     term_matches = sum(1 for term in query_terms if term in text)
                     score = term_matches / len(query_terms)
                 else:
                     score = 0
                 
-                # Only include files with some matches
                 if score > 0:
                     file['match_score'] = score
                     file['match_type'] = 'keyword'
                     scored_files.append(file)
             
-            # Sort by score (highest first)
+            # Sort by score 
             scored_files.sort(key=lambda x: x.get('match_score', 0), reverse=True)
             
             # Apply top_k limit
             scored_files = scored_files[:req.top_k]
             
-            # Format results
             formatted_results = []
             for file in scored_files:
                 context = get_context_around_match(
@@ -3597,7 +3348,6 @@ async def search_files(req: SearchRequest, auth_token: str | None = Query(None))
                 }
             }
         
-        # If we get here, no results were found
         return {
             'query': req.query,
             'total_searched': len(files),
@@ -3623,7 +3373,6 @@ async def visual_search(image: UploadFile = File(...), auth_token: str | None = 
         raise HTTPException(status_code=400, detail="Google Drive authentication required. Please set up Google OAuth to search your Drive files.")
     
     try:
-        # Save uploaded image temporarily
         temp_image_path = os.path.join(tempfile.gettempdir(), f"visual_search_{image.filename}")
         with open(temp_image_path, "wb") as buffer:
             content = await image.read()
@@ -3632,7 +3381,6 @@ async def visual_search(image: UploadFile = File(...), auth_token: str | None = 
         # Analyze image using local computer vision model
         detected_objects = analyze_image_content(temp_image_path)
         
-        # Clean up temp image
         try:
             os.remove(temp_image_path)
         except Exception:
@@ -3648,7 +3396,7 @@ async def visual_search(image: UploadFile = File(...), auth_token: str | None = 
             }
         
         # Search for files containing the detected objects
-        search_queries = detected_objects[:3]  # Use top 3 detected objects
+        search_queries = detected_objects[:5]  
         all_matching_files = []
         
         # Get Google Drive service
@@ -3662,24 +3410,21 @@ async def visual_search(image: UploadFile = File(...), auth_token: str | None = 
         results = service.files().list(
             q=f"({search_query}) and trashed=false",
             fields="files(id,name,mimeType,size,modifiedTime,parents)",
-            pageSize=50  # Limit for visual search
+            pageSize=50  
         ).execute()
         
         files = results.get('files', [])
         print(f"Found {len(files)} files to search through for visual content")
         
-        # Search each file for the detected objects
         for query in search_queries:
             matching_files = []
             
             for file in files:
                 try:
-                    # Download and extract text from the file
                     file_path = drive_download_file(auth_token, file['id'], tempfile.gettempdir())
                     if not file_path:
                         continue
                     
-                    # Extract text based on file type
                     text_content = ""
                     file_name = file['name'].lower()
                     
@@ -3700,13 +3445,11 @@ async def visual_search(image: UploadFile = File(...), auth_token: str | None = 
                     elif file['mimeType'] in ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
                         text_content = read_text_file(file_path)
                     
-                    # Clean up the downloaded file
                     try:
                         os.remove(file_path)
                     except Exception:
                         pass
                     
-                    # Search for the detected object in the text content
                     match_result = smart_search_in_text(text_content, query)
                     if match_result:
                         print(f"Found visual match in file: {file['name']} for object: {query}")
@@ -3732,7 +3475,6 @@ async def visual_search(image: UploadFile = File(...), auth_token: str | None = 
             
             all_matching_files.extend(matching_files)
         
-        # Remove duplicates and sort by score
         unique_files = {}
         for file in all_matching_files:
             file_id = file['id']
@@ -3797,9 +3539,7 @@ def analyze_image_content(image_path):
         # Map ImageNet class indices to meaningful search terms
         detected_objects = []
         for idx in top_indices:
-            # Comprehensive mapping of ImageNet classes to meaningful search terms
             object_mappings = {
-                # Birds and Poultry
                 7: ["cock", "rooster", "chicken", "poultry", "bird", "farm"],
                 8: ["hen", "chicken", "poultry", "bird", "farm", "egg"],
                 9: ["ostrich", "bird", "large bird", "wildlife"],
@@ -3815,14 +3555,12 @@ def analyze_image_content(image_path):
                 19: ["chickadee", "bird", "small bird", "wildlife"],
                 20: ["water ouzel", "bird", "water bird", "wildlife"],
                 
-                # Mammals - Cats
                 281: ["tabby cat", "cat", "feline", "pet", "animal"],
                 282: ["tiger cat", "cat", "feline", "pet", "animal"],
                 283: ["Persian cat", "cat", "feline", "pet", "animal"],
                 284: ["Siamese cat", "cat", "feline", "pet", "animal"],
                 285: ["Egyptian cat", "cat", "feline", "pet", "animal"],
                 
-                # Mammals - Dogs
                 151: ["Chihuahua", "dog", "small dog", "pet", "animal"],
                 152: ["Japanese spaniel", "dog", "small dog", "pet", "animal"],
                 153: ["Maltese dog", "dog", "small dog", "pet", "animal"],
@@ -3832,7 +3570,6 @@ def analyze_image_content(image_path):
                 157: ["papillon", "dog", "small dog", "pet", "animal"],
                 158: ["toy terrier", "dog", "small dog", "pet", "animal"],
                 
-                # Farm Animals
                 345: ["pig", "hog", "swine", "farm", "animal"],
                 346: ["wild boar", "pig", "wild animal", "wildlife"],
                 347: ["warthog", "pig", "wild animal", "wildlife"],
@@ -3841,7 +3578,6 @@ def analyze_image_content(image_path):
                 350: ["water buffalo", "buffalo", "farm", "animal"],
                 351: ["bison", "buffalo", "wild animal", "wildlife"],
                 
-                # Food Items
                 924: ["guacamole", "food", "dip", "avocado", "mexican"],
                 925: ["consomme", "soup", "food", "broth"],
                 926: ["hot pot", "food", "cooking", "meal"],
@@ -3860,7 +3596,6 @@ def analyze_image_content(image_path):
                 939: ["zucchini", "vegetable", "food", "green"],
                 940: ["spaghetti squash", "squash", "vegetable", "food"],
                 
-                # Vehicles
                 403: ["airliner", "airplane", "aircraft", "transportation", "travel"],
                 404: ["warplane", "airplane", "aircraft", "military"],
                 407: ["ambulance", "vehicle", "emergency", "medical"],
@@ -3875,7 +3610,6 @@ def analyze_image_content(image_path):
                 416: ["sports car", "car", "vehicle", "fast"],
                 417: ["station wagon", "car", "vehicle", "family"],
                 
-                # Technology
                 664: ["cellular telephone", "phone", "mobile", "technology"],
                 665: ["dial telephone", "phone", "vintage", "technology"],
                 666: ["digital clock", "clock", "time", "technology"],
@@ -3886,7 +3620,6 @@ def analyze_image_content(image_path):
                 671: ["laptop", "computer", "technology", "portable"],
                 672: ["notebook", "computer", "technology", "portable"],
                 
-                # Nature
                 980: ["volcano", "mountain", "nature", "geological"],
                 981: ["promontory", "cliff", "nature", "geological"],
                 982: ["sandbar", "beach", "nature", "water"],
@@ -3918,14 +3651,12 @@ def analyze_image_content(image_path):
                 else:
                     detected_objects.extend(["object", "item", "thing"])
         
-        # Remove duplicates and return top terms
         unique_objects = list(dict.fromkeys(detected_objects))
         print(f"Final detected objects: {unique_objects}")
-        return unique_objects[:8]  # Return top 8 unique terms
+        return unique_objects[:8] 
         
     except Exception as e:
         print(f"Image analysis error: {e}")
-        # Fallback to basic terms
         return ["image", "photo", "picture", "document", "content"]
 
 class UpdateCategoryRequest(BaseModel):
@@ -3934,10 +3665,10 @@ class UpdateCategoryRequest(BaseModel):
     auth_token: Optional[str] = None
 
 class MultiFileAnalysisRequest(BaseModel):
-    files: list[dict]  # List of file objects with id, name, etc.
+    files: list[dict]  
     query: str
     output_type: str = "detailed"  # detailed, flowchart, timeline, short_notes, key_insights, flashcards
-    format: Optional[str] = None  # md, txt, docx, pdf for downloadable outputs
+    format: Optional[str] = None 
     auth_token: Optional[str] = None
 
 @app.post("/update_category")
@@ -3946,18 +3677,14 @@ def update_category(req: UpdateCategoryRequest):
     try:
         print(f"UPDATE_CATEGORY called for file {req.file_id} -> {req.new_category}")
         
-        # Get Drive service
         drive_service = get_drive_service(req.auth_token)
         
-        # Update the file's category in our database
         cur = conn.cursor()
         
-        # First check if file exists in our proposals table
         cur.execute("SELECT id, file_name FROM proposals WHERE file_id = ?", (req.file_id,))
         existing = cur.fetchone()
         
         if existing:
-            # Update existing record - DON'T auto-approve, just update category
             cur.execute("""
                 UPDATE proposals 
                 SET proposed_label = ?, updated_at = CURRENT_TIMESTAMP
@@ -3970,7 +3697,6 @@ def update_category(req: UpdateCategoryRequest):
                 file_info = drive_service.files().get(fileId=req.file_id).execute()
                 file_name = file_info.get('name', 'Unknown')
                 
-                # Insert new record - DON'T auto-approve, just set proposed category
                 cur.execute("""
                     INSERT INTO proposals (file_id, file_name, proposed_label, approved)
                     VALUES (?, ?, ?, 0)
@@ -3978,7 +3704,6 @@ def update_category(req: UpdateCategoryRequest):
                 print(f"Created new record for {req.file_id}")
             except Exception as e:
                 print(f"Failed to get file info from Drive: {e}")
-                # Insert with unknown name - DON'T auto-approve
                 cur.execute("""
                     INSERT INTO proposals (file_id, file_name, proposed_label, approved)
                     VALUES (?, ?, ?, 0)
@@ -4058,7 +3783,6 @@ def generate_flashcards_from_content(combined_text: str, file_summaries: list) -
     """Generate flashcards from the combined content of multiple files"""
     flashcards = []
     
-    # Convert to lowercase for easier matching
     content_lower = combined_text.lower()
     
     # DSA-specific flashcards based on content
@@ -4141,7 +3865,7 @@ def generate_flashcards_from_content(combined_text: str, file_summaries: list) -
             'answer': f'This file contains {file_summaries[min(len(flashcards)-1, len(file_summaries)-1)]["length"]} characters of content related to the study topic.'
         })
     
-    return flashcards[:6]  # Return max 6 flashcards
+    return flashcards[:6] 
 
 @app.post("/analyze_multi")
 def analyze_multi_files(req: MultiFileAnalysisRequest):
@@ -4170,7 +3894,6 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
                 
             print(f"Processing file {i+1}/{len(req.files)}: {file_name}")
             
-            # Download and extract text from file
             path = drive_download_file(req.auth_token, file_id, tempfile.gettempdir())
             if not path:
                 print(f"Failed to download file: {file_name}")
@@ -4194,16 +3917,14 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
                     text = read_text_file(path)
                 
                 if text and text.strip():
-                    # Add file header for context
                     file_text = f"=== FILE: {file_name} ===\n{text}\n=== END OF {file_name} ===\n\n"
                     all_texts.append(file_text)
                     
-                    # Create individual file summary
                     file_summary = {
                         "name": file_name,
                         "length": len(text),
                         "preview": text[:500] + "..." if len(text) > 500 else text,
-                        "full_text": text  # Store full text for better analysis
+                        "full_text": text  
                     }
                     file_summaries.append(file_summary)
                     print(f"Extracted {len(text)} characters from {file_name}")
@@ -4219,11 +3940,9 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
         if not all_texts:
             raise HTTPException(status_code=422, detail="No readable content found in any of the provided files")
         
-        # Combine all texts
         combined_text = "\n".join(all_texts)
         print(f"Combined text length: {len(combined_text)} characters from {len(all_texts)} files")
         
-        # Create output-type specific prompt
         output_prompts = {
             "detailed": f"Provide a comprehensive, detailed analysis of the following documents to answer this question: {req.query}\n\nAnalyze all the documents together and provide insights, connections, and conclusions.",
             "flowchart": f"Create a flowchart representation (in text format with arrows and boxes) based on the following documents to answer: {req.query}\n\nShow the flow of processes, decisions, or concepts across all documents.",
@@ -4235,15 +3954,12 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
         
         prompt = output_prompts.get(req.output_type, output_prompts["detailed"])
         
-        # Check if we should use assistant generator for structured outputs
         use_assistant_generator = req.output_type in ['flowchart', 'flashcards', 'key_insights'] and req.format
         
         if use_assistant_generator:
-            # Use assistant generator for structured outputs with downloadable formats
             try:
                 print(f"Using assistant generator for {req.output_type} with format {req.format}")
                 
-                # Map output types to assistant generator kinds
                 kind_mapping = {
                     'flowchart': 'flowchart',
                     'flashcards': 'flashcards', 
@@ -4274,7 +3990,7 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
                     "files_processed": len(all_texts),
                     "total_files": len(req.files),
                     "file_summaries": file_summaries,
-                    "analysis": content,  # Raw content for display
+                    "analysis": content,  
                     "combined_length": len(combined_text),
                     "assistant": {
                         "type": "download",
@@ -4296,14 +4012,13 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
         # Generate analysis using existing NLP service
         try:
             # Limit combined text to prevent token overflow
-            max_text_length = 8000  # Reasonable limit for most NLP models
+            max_text_length = 8000  
             if len(combined_text) > max_text_length:
                 combined_text = combined_text[:max_text_length] + "\n\n[Content truncated for analysis]"
             
             print(f"Sending to NLP service: prompt length={len(prompt)}, text length={len(combined_text)}")
             # Use the correct NLP method - best_answer for Q&A or gemini_generate for general analysis
             if '?' in req.query or any(word in req.query.lower() for word in ['what', 'how', 'why', 'when', 'where', 'who']):
-                # This is a question, use best_answer
                 result = nlp.best_answer(req.query, combined_text)
                 analysis = result.get('answer', 'No answer found')
             else:
@@ -4313,30 +4028,24 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
                 analysis = nlp.gemini_generate(full_prompt, temperature=0.3, max_output_tokens=1024)
                 print(f"Gemini returned: {len(analysis) if analysis else 0} characters")
             
-            # Clean up the response - remove excessive asterisks and formatting
             if analysis:
-                # Remove multiple asterisks and clean formatting
-                analysis = re.sub(r'\*{2,}', '', analysis)  # Remove all bold asterisks
+                analysis = re.sub(r'\*{2,}', '', analysis)  
                 analysis = analysis.strip()
                 print(f"NLP service returned analysis: {len(analysis)} characters")
             else:
                 print("NLP service returned empty or None analysis, using fallback")
-                analysis = None  # Force fallback
-            
+                analysis = None 
         except Exception as e:
             print(f"NLP generation failed: {e}")
             print(f"Error details: {type(e).__name__}: {str(e)}")
             
-            # Create a more intelligent fallback analysis
             analysis = f"Multi-File Analysis Results\n\n"
             analysis += f"Query: {req.query}\n\n"
             
-            # Provide basic analysis based on file contents
             for summary in file_summaries:
                 analysis += f"{summary['name']} ({summary['length']} characters):\n"
                 analysis += f"{summary['preview']}\n\n"
             
-            # Provide intelligent analysis based on the actual content and query
             query_lower = req.query.lower()
             
             # Extract key information from the combined text
@@ -4367,22 +4076,18 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
                 analysis += "Answer: The documents discuss algorithmic complexity and optimization for efficient computing. This includes concepts of time and space complexity in data structure operations.\n\n"
             
             else:
-                # Generic response based on content
                 analysis += f"Answer: Based on the {len(file_summaries)} documents about Data Structures and Algorithms, the materials cover fundamental computer science concepts including data organization, algorithmic thinking, and optimization techniques.\n\n"
             
             analysis += "Note: This analysis is based on the document content shown above. For more specific details, please refer to the individual file contents."
         
-        # If analysis is still empty or None, provide a comprehensive fallback
         if not analysis or len(analysis.strip()) == 0:
             print("Creating comprehensive fallback analysis")
             
-            # Create a detailed summary based on the actual content
             analysis = f"# Multi-File Analysis Results\n\n"
             analysis += f"**Query:** {req.query}\n"
             analysis += f"**Files Analyzed:** {len(file_summaries)}\n"
             analysis += f"**Total Content:** {len(combined_text):,} characters\n\n"
             
-            # Analyze the query to provide relevant response
             query_lower = req.query.lower()
             
             if 'summarize' in query_lower or 'summary' in query_lower:
@@ -4393,17 +4098,14 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
                     file_type = summary['name'].split('.')[-1].upper() if '.' in summary['name'] else 'FILE'
                     analysis += f"**{i}. {summary['name']}** ({file_type}, {summary['length']} chars)\n"
                     
-                    # Show more meaningful and complete preview
                     full_text = summary.get('full_text', summary.get('preview', ''))
                     if full_text:
-                        # Extract key sentences or concepts
                         sentences = full_text.split('.')
                         key_content = []
                         
-                        # Get first few meaningful sentences
                         for sentence in sentences[:3]:
                             sentence = sentence.strip()
-                            if len(sentence) > 10:  # Only meaningful sentences
+                            if len(sentence) > 10:  
                                 key_content.append(sentence)
                         
                         if key_content:
@@ -4455,10 +4157,8 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
                 for i, summary in enumerate(file_summaries, 1):
                     analysis += f"### File {i}: {summary['name']}\n"
                     analysis += f"**Size:** {summary['length']} characters\n"
-                    # Show more meaningful preview
                     preview = summary.get('preview', '')
                     if len(preview) > 300:
-                        # Find a good breaking point
                         break_point = preview.find('.', 250)
                         if break_point == -1:
                             break_point = preview.find(' ', 250)
@@ -4470,7 +4170,6 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
             
             analysis += "\n---\n*Note: This analysis was generated using basic text processing. For more advanced AI-powered insights, please ensure your Gemini API configuration is properly set up.*"
         
-        # Prepare response
         response = {
             "query": req.query,
             "output_type": req.output_type,
@@ -4492,7 +4191,28 @@ def analyze_multi_files(req: MultiFileAnalysisRequest):
         print(f"Error in multi-file analysis: {e}")
         raise HTTPException(status_code=500, detail=f"Multi-file analysis failed: {str(e)}")
 
+@app.get("/download/{file_id}")
+def download_file(file_id: str, auth_token: str | None = Query(None)):
+    try:
+        if not auth_token:
+            raise HTTPException(status_code=401, detail="Authentication token required")
+        
+        temp_path = drive_download_file(auth_token, file_id, tempfile.gettempdir())
+        if not temp_path:
+            raise HTTPException(status_code=404, detail="File not found or download failed")
+        
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=temp_path,
+            media_type='application/octet-stream',
+            filename=os.path.basename(temp_path)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Download error: {e}")
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
 @app.get("/favicon.ico")
 def favicon():
-    # Silence 404s from browsers requesting a favicon
     return {}

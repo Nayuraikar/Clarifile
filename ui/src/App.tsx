@@ -1,18 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import DuplicateResolution from './DuplicateResolution'
 import SearchFiles from './components/SearchFiles'
-import './textCleaner.js'
 
 const BASE = 'http://127.0.0.1:4000'
 
 async function call(path: string, opts?: RequestInit) {
-  const res = await fetch(BASE + path, opts)
+  const res = await fetch(BASE + path, opts ? opts : {})
   if (res.status === 204) return { ok: true }
   const text = await res.text()
   try { return JSON.parse(text) } catch { return { error: 'Invalid JSON', raw: text } }
 }
-
-// Helper to extract the proposed category from a proposal regardless of field name variations
 function getProposalCategory(p: any): string {
   const getCategory = (): string => {
     // First check if we have a direct proposed_label (from backend)
@@ -46,13 +43,11 @@ function getProposalCategory(p: any): string {
   if (category.includes(':')) {
     const [main, sub] = category.split(':').map(s => s.trim());
     if (main.toLowerCase() === sub.toLowerCase()) {
-      return main; // Return just "Shopping" instead of "Shopping: Shopping"
+      return main; 
     }
   }
   return category;
 }
-
-type Proposal = { id: number; file: string; proposed: string; final?: string };
 
 interface DriveProposal {
   id: string;
@@ -99,58 +94,8 @@ export default function App() {
   const [askResult, setAskResult] = useState<any>(null)
   const [driveAnalyzedId, setDriveAnalyzedId] = useState<string>('')
   const [customLabels, setCustomLabels] = useState<Record<string, string>>({})
-  const [analyzingFile, setAnalyzingFile] = useState<string | null>(null)
-
-  // Helper function to download files - using your proven implementation
-  const downloadFile = (filename: string, base64Data: string, mimeType: string) => {
-    console.log('downloadFile called with:', { filename, mimeType, base64Length: base64Data?.length });
-    try {
-      if (!base64Data) {
-        throw new Error('No base64 data provided');
-      }
-      
-      // Use your proven download implementation
-      const b = atob(base64Data);
-      const bytes = new Uint8Array(b.length);
-      for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i);
-      const blob = new Blob([bytes], { type: mimeType || "application/octet-stream" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename || "output.md";
-      a.click();
-      URL.revokeObjectURL(a.href);
-      
-      console.log('Download completed successfully');
-      setNotification(`Downloaded ${filename} successfully!`)
-    } catch (error) {
-      console.error('Download failed:', error)
-      setNotification(`Download failed: ${error.message}. Please try again.`)
-    }
-  }
-
-  // Alternative download function using your response format
-  const downloadFromResponse = (r: { filename: string; mime: string; base64: string }) => {
-    console.log('downloadFromResponse called with:', { filename: r.filename, mime: r.mime, hasBase64: !!r.base64 });
-    try {
-      const b = atob(r.base64);
-      const bytes = new Uint8Array(b.length);
-      for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i);
-      const blob = new Blob([bytes], { type: r.mime || "application/octet-stream" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = r.filename || "output.md";
-      a.click();
-      URL.revokeObjectURL(a.href);
-      
-      console.log('Download from response completed successfully');
-      setNotification(`Downloaded ${r.filename} successfully!`)
-    } catch (error) {
-      console.error('Download from response failed:', error)
-      setNotification(`Download failed: ${error.message}. Please try again.`)
-    }
-  }
-
-  // Enhanced download functionality
+ 
+  //  download functionality
   const DownloadButton = ({ message, className = '' }: { message: ChatMessage, className?: string }) => {
     if (message.role !== 'assistant' || !message.assistant || message.assistant.type !== 'download') {
       return null;
@@ -176,7 +121,6 @@ export default function App() {
         for (let i = 0; i < byteCharacters.length; i++) {
           byteNumbers[i] = byteCharacters.charCodeAt(i);
         }
-        
         const byteArray = new Uint8Array(byteNumbers);
         const mimeType = mime || `application/${kind}` || 'application/octet-stream';
         const blob = new Blob([byteArray], { type: mimeType });
@@ -190,7 +134,6 @@ export default function App() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
         setNotification(`Downloaded ${filename || 'file'} successfully!`);
       } catch (error) {
         console.error('Download failed:', error);
@@ -248,43 +191,7 @@ export default function App() {
     );
   };
 
-
-
-  // Your assistantGenerate function - using correct endpoint
-  const assistantGenerate = async (req: {
-    kind: "flowchart" | "short_notes" | "detailed_notes" | "timeline" | "key_insights" | "flashcards";
-    text?: string;
-    file?: { id: string; name?: string };
-    format?: "md" | "txt" | "docx" | "pdf" | "png";
-    auth_token?: string;
-  }) => {
-    console.log('assistantGenerate called with:', req);
-    // Use the correct endpoint that your gateway provides
-    const res = await fetch("http://127.0.0.1:4000/api/assistant_generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req),
-    });
-    if (!res.ok) {
-      throw new Error(await res.text());
-    }
-    return (await res.json()) as { kind: string; filename: string; mime: string; base64: string; content: any };
-  }
-
-  // Helper function to send study requests
-  const sendStudyRequest = (request: string) => {
-    if (!selectedChatId) {
-      setNotification('Please select a chat first')
-      return
-    }
-    setAskInput(request)
-    // Trigger the send message function
-    setTimeout(() => {
-      sendMsg()
-    }, 100)
-  }
   const [notification, setNotification] = useState<string | null>(null)
-  
   // Enhanced chat types and state
   interface ChatMessage {
     id?: string;
@@ -305,7 +212,7 @@ export default function App() {
     id: string;
     file: DriveProposal;
     messages: ChatMessage[];
-    originalFiles?: any[]; // For multi-file chats
+    originalFiles?: any[];
   }
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -336,9 +243,7 @@ export default function App() {
   const setLoading = (operation: string, loading: boolean) => {
     setLoadingStates(prev => ({ ...prev, [operation]: loading }))
   }
-
   const isLoading = (operation: string) => loadingStates[operation] || false
-
   // Ensure a chat exists for a given file and select it
   const ensureChatForFile = (file: DriveProposal) => {
     setChats(prev => {
@@ -359,6 +264,7 @@ export default function App() {
       return { 
         ...prev, 
         [file.id]: { 
+          id: file.id, 
           file: { ...file },
           messages: [] 
         } 
@@ -381,13 +287,10 @@ export default function App() {
       if (message.role === 'assistant') {
         setSelectedChatId(chatId);
         setDriveAnalyzedId(chatId);
-        
-        // If we're not already on the AI Assistant tab, switch to it
         if (tab !== 'ai') {
           setTab('ai');
         }
       }
-      
       return { ...prev, [chatId]: updatedChat };
     });
   }
@@ -425,20 +328,15 @@ export default function App() {
       const [propsResp, categoriesResp] = await Promise.all([
         call('/drive/proposals'),
         call('/drive/categories')
-      ]);
-      
+      ]);      
       const proposals = Array.isArray(propsResp) ? propsResp : [];
       const categories = Array.isArray(categoriesResp) ? categoriesResp : [];
-      
-      // Keep local state in sync (optional, useful elsewhere in UI)
       setDriveProps(proposals);
 
-      // If no proposals yet, return empty categories
       if (proposals.length === 0) {
         setCats(categories);
         return;
       }
-
       // Create a map of category names to their folder info
       const categoryInfoMap = new Map();
       categories.forEach((cat: any) => {
@@ -480,7 +378,6 @@ export default function App() {
         Array.from(allCategories).map(async (categoryName) => {
           const info = categoryInfoMap.get(categoryName) || {};
           const existing = folderContents.get(categoryName) || [];
-          
           // Get proposed files for this category
           const proposedRaw = proposals
             .filter(file => {
@@ -498,14 +395,12 @@ export default function App() {
           const existingNameSet = new Set(
             existing.map((f: any) => String(f.name).trim().toLowerCase())
           );
-
           const proposed = proposedRaw.filter((p: any) => {
             if (p?.id && existingIdSet.has(String(p.id))) return false;
             const nm = String(p?.name || '').trim().toLowerCase();
             if (nm && existingNameSet.has(nm)) return false;
             return true;
           });
-
           return {
             name: categoryName,
             count: proposed.length,
@@ -523,7 +418,6 @@ export default function App() {
 
       // Sort categories by name for consistent display
       categoriesWithFiles.sort((a, b) => a.name.localeCompare(b.name));
-      
       setCats(categoriesWithFiles);
     } catch (error) {
       console.error('Error refreshing categories:', error);
@@ -537,16 +431,16 @@ export default function App() {
   // New: Scan Drive via the extension pipeline (organize with move:false) to populate proposals
   async function handleScan() {
     try {
-      // Open Google Drive in a new tab/window for user visibility as requested
+      // Open Google Drive in a new tab/window for user visibility 
       window.open('https://drive.google.com/drive/my-drive', '_blank');
     } catch {}
     setIsScanning(true)
     setScanProgress(0)
     setScanStatus('Scanning...')
     try {
-      // Ask gateway for existing proposals; if empty, tell user to use the extension to list files
+      // Ask gateway for existing proposals; 
       await refreshDrive()
-      // Removed popup instructions - just redirect to Drive
+      
     } finally { 
       setIsScanning(false) 
       setScanProgress(100)
@@ -563,7 +457,7 @@ export default function App() {
     if (notification) {
       const timer = setTimeout(() => {
         setNotification(null)
-      }, 5000)
+      }, 15000)
       return () => clearTimeout(timer)
     }
   }, [notification])
@@ -578,7 +472,6 @@ export default function App() {
   async function sendMsg(){
     const q = askInput.trim(); 
     if(!q) return;
-    
     if (!selectedChatId || !chats[selectedChatId]) {
       setNotification('Select a chat from the left to ask about a specific file.')
       return
@@ -604,23 +497,20 @@ export default function App() {
         console.log('replaceTypingWith: Updated message with assistant data:', msgs[msgs.length - 1]);
         return { ...prev, [selectedChatId!]: { ...chat, messages: msgs } }
       })
-    }
-    
+    }    
     try {
       const chat = chats[selectedChatId]
       const file = chat.file
       
       // Special handling for multi-file analysis chats
       if (file?.id && String(file.id).startsWith('multi_')) {
-        // For multi-file chats, we need to get the original selected files from the chat
+        // For multi-file chats, get the original selected files from the chat
         const multiFileChat = chats[selectedChatId]
-        const originalFiles = multiFileChat.originalFiles || []
-        
+        const originalFiles = multiFileChat.originalFiles || []        
         if (originalFiles.length === 0) {
           replaceTypingWith('Unable to find original files for this multi-file analysis. Please create a new multi-file analysis.')
           return
-        }
-        
+        }        
         const response = await call('/analyze_multi', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -634,13 +524,11 @@ export default function App() {
         if (response?.error) {
           replaceTypingWith(`Error: ${response.error}. Please try again.`)
           return
-        }
-        
+        }        
         const analysis = response?.analysis || 'No analysis available'
         replaceTypingWith(analysis)
         return
-      }
-      
+      }      
       if (!file?.id || String(file.id).startsWith('demo-file-')) {
         replaceTypingWith('This is a demo chat. Please pick a real document from Files or run Analyze/Summarize on a Drive file to chat about it.')
         return
@@ -689,8 +577,7 @@ export default function App() {
         id: 'demo-file-' + Date.now(),
         name: 'Sample Document.pdf',
         proposed_category: 'Documents'
-      }
-      
+      }      
       setNotification('No documents loaded. Using demo file for Quick Action...')
       performQuickAction(action, demoFile)
       return
@@ -707,198 +594,6 @@ export default function App() {
     }
   }
 
-  // Search functionality
-  async function performSearch() {
-    if (!searchQuery.trim()) {
-      setNotification('Please enter a search query')
-      return
-    }
-
-    setSearchLoading(true)
-    setSearchResults([])
-    setSearchStats(null)
-    setNotification('Searching through your Google Drive files...')
-
-    try {
-      // Call the actual backend search endpoint
-      const response = await call('/search_files', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: searchQuery
-        })
-      })
-
-      if (response?.error) {
-        if (response.error.includes('no drive token available')) {
-          setNotification('Please click "Organize in Drive" first to authenticate with Google Drive, then try searching.')
-        } else {
-          setNotification(`Search failed: ${response.error}`)
-        }
-        return
-      }
-
-      setSearchResults(response.files || [])
-      setSearchStats({
-        total_searched: response.total_searched || 0,
-        matches_found: response.matches_found || 0
-      })
-      
-      setNotification(`Found ${response.matches_found || 0} files matching "${searchQuery}" in your Google Drive`)
-    } catch (error: any) {
-      console.error('Search error:', error)
-      setNotification(`Search failed: ${error?.message || 'Unknown error'}`)
-    } finally {
-      setSearchLoading(false)
-    }
-  }
-
-  // Visual search function
-  async function performVisualSearch() {
-    if (!visualSearchImage) {
-      setNotification('Please select an image first')
-      return
-    }
-
-    setSearchLoading(true)
-    setSearchResults([])
-    setSearchStats(null)
-    setNotification('Analyzing image and searching through your files...')
-
-    try {
-      // Create FormData to send the image
-      const formData = new FormData()
-      formData.append('image', visualSearchImage)
-
-      const response = await fetch('http://127.0.0.1:4000/visual_search', {
-        method: 'POST',
-        body: formData
-      })
-
-      const result = await response.json()
-
-      if (result?.error) {
-        setNotification(`Visual search failed: ${result.error}`)
-        return
-      }
-
-      setSearchResults(result.files || [])
-      setSearchStats({
-        total_searched: result.total_searched || 0,
-        matches_found: result.matches_found || 0
-      })
-      
-      setNotification(`Found ${result.matches_found || 0} files related to "${result.detected_objects?.join(', ')}" in your Google Drive`)
-    } catch (error: any) {
-      console.error('Visual search error:', error)
-      setNotification(`Visual search failed: ${error?.message || 'Unknown error'}`)
-    } finally {
-      setSearchLoading(false)
-    }
-  }
-
-  // Handle image upload
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      if (file.type.startsWith('image/')) {
-        setVisualSearchImage(file)
-        
-        // Create preview URL
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          setVisualSearchPreview(e.target?.result as string)
-        }
-        reader.readAsDataURL(file)
-        
-        setNotification('Image uploaded! Click the camera button to search.')
-      } else {
-        setNotification('Please select a valid image file')
-      }
-    }
-  }
-
-  // Clear visual search
-  const clearVisualSearch = () => {
-    setVisualSearchImage(null)
-    setVisualSearchPreview(null)
-    if (inputRef.current) {
-      inputRef.current.value = ''
-    }
-  }
-
-  // Demo function to generate sample search results
-  function generateDemoSearchResults(query: string) {
-    const queryLower = query.toLowerCase()
-    
-    // Sample files that could match different queries
-    const sampleFiles = [
-      {
-        id: 'demo-1',
-        name: 'Project Documentation.pdf',
-        mimeType: 'application/pdf',
-        size: 245760,
-        modifiedTime: '2024-01-15T10:30:00Z',
-        context: 'This document contains comprehensive project documentation including requirements, architecture, and implementation details for the new system.',
-        match_position: 45,
-        drive_url: 'https://drive.google.com/file/d/demo-1/view'
-      },
-      {
-        id: 'demo-2',
-        name: 'Meeting Notes - Q1 Planning.txt',
-        mimeType: 'text/plain',
-        size: 12800,
-        modifiedTime: '2024-01-10T14:20:00Z',
-        context: 'Meeting notes from the quarterly planning session. Discussed project timelines, resource allocation, and key deliverables for the upcoming quarter.',
-        match_position: 12,
-        drive_url: 'https://drive.google.com/file/d/demo-2/view'
-      },
-      {
-        id: 'demo-3',
-        name: 'Grocery Shopping List.txt',
-        mimeType: 'text/plain',
-        size: 1024,
-        modifiedTime: '2024-01-20T09:15:00Z',
-        context: 'Weekly grocery list including fruits, vegetables, dairy products, and household items. Remember to buy organic vegetables and check expiration dates.',
-        match_position: 8,
-        drive_url: 'https://drive.google.com/file/d/demo-3/view'
-      },
-      {
-        id: 'demo-4',
-        name: 'Invoice - January 2024.pdf',
-        mimeType: 'application/pdf',
-        size: 89600,
-        modifiedTime: '2024-01-25T16:45:00Z',
-        context: 'Monthly invoice for services rendered in January 2024. Total amount due: $2,450.00. Payment terms: Net 30 days.',
-        match_position: 23,
-        drive_url: 'https://drive.google.com/file/d/demo-4/view'
-      },
-      {
-        id: 'demo-5',
-        name: 'Research Paper - AI Applications.pdf',
-        mimeType: 'application/pdf',
-        size: 512000,
-        modifiedTime: '2024-01-12T11:30:00Z',
-        context: 'Academic research paper exploring artificial intelligence applications in modern software development and project management systems.',
-        match_position: 67,
-        drive_url: 'https://drive.google.com/file/d/demo-5/view'
-      }
-    ]
-    
-    // Filter files based on query
-    const matchingFiles = sampleFiles.filter(file => 
-      file.name.toLowerCase().includes(queryLower) || 
-      file.context.toLowerCase().includes(queryLower)
-    )
-    
-    return {
-      query: query,
-      total_searched: sampleFiles.length,
-      matches_found: matchingFiles.length,
-      files: matchingFiles
-    }
-  }
-
   const performQuickAction = (action: string, file: DriveProposal) => {
     console.log('Performing quick action:', action)
     console.log('File:', file.name, file.id)
@@ -907,18 +602,18 @@ export default function App() {
     setQuickActionLoading(true)
     setNotification(`Performing ${action.replace('_', ' ')} on "${file.name}"...`)
     
-    // Use existing data and functionality - no API calls needed!
+    // Use existing data and functionality 
     setTimeout(() => {
       let messageContent = ''
       
       switch (action) {
         case 'summarize':
-          // For demo files, show demo in a chat; otherwise mirror Analyze into file chat
+          
           {
             const isDemo = file.id.startsWith('demo-file-')
             ensureChatForFile(file)
             if (isDemo) {
-              const demoContent = `**Summary Feature Demo**\n\nÃ¢â‚¬Â¢ **Feature:** Document Summarization\nÃ¢â‚¬Â¢ **Purpose:** Analyzes document content and provides key insights\nÃ¢â‚¬Â¢ **Usage:** Select a real document to get actual summary\nÃ¢â‚¬Â¢ **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+              const demoContent = ` Summary Feature Demo \n\n‚  Feature:  Document Summarization\n ‚  Purpose:  Analyzes document content and provides key insights\n ‚  Usage:  Select a real document to get actual summary\n ‚  Status:  Ready to use with your files\n\n To use with real files:  Upload documents via the Chrome extension or Files tab.`
               appendToChat(file.id, { role: 'assistant', content: demoContent })
               setQuickActionLoading(false)
               setNotification('Summary demo shown')
@@ -940,7 +635,7 @@ export default function App() {
               if (response && response.summary !== undefined) {
                 appendToChat(file.id, {
                   role: 'assistant',
-                  content: `I've analyzed the file **"${file.name}"**. Here's what I found:\n\n${response.summary}\n\nYou can now ask me questions about this file!`
+                  content: `I've analyzed the file  "${file.name}" . Here's what I found:\n\n${response.summary}\n\nYou can now ask me questions about this file!`
                 })
                 setNotification('Summary generated successfully!')
               } else if (response?.error) {
@@ -958,28 +653,28 @@ export default function App() {
           break
           
         case 'find_similar':
-          // Group files by same proposed category (similar to Files tab logic)
+          // Group files by same proposed category 
           const isDemoSimilar = file.id.startsWith('demo-file-')
           if (isDemoSimilar) {
-            messageContent = `**Find Similar Files Demo**\n\nÃ¢â‚¬Â¢ **Feature:** Similarity Search\nÃ¢â‚¬Â¢ **Purpose:** Groups files by category and content similarity\nÃ¢â‚¬Â¢ **Usage:** Upload files to find actual similar documents\nÃ¢â‚¬Â¢ **Status:** Ready to use with your files\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+            messageContent = ` Find Similar Files Demo \n\n  Feature:  Similarity Search\n  Purpose:  Groups files by category and content similarity\n  Usage:  Upload files to find actual similar documents\n  Status:  Ready to use with your files\n\n To use with real files:  Upload documents via the Chrome extension or Files tab.`
           } else {
             const similarFiles = driveProps.filter(f => 
               f.id !== file.id && 
               f.proposed_category === file.proposed_category
             )
-            messageContent = `**Files similar to "${file.name}"**\n\n**Category:** ${file.proposed_category}\n\n${similarFiles.length > 0 ? 
+            messageContent = ` Files similar to "${file.name}" \n\n Category:  ${file.proposed_category}\n\n${similarFiles.length > 0 ? 
               similarFiles.map((f, i) => `${i + 1}. ${f.name}`).join('\n') : 
-              'No other files found in the same category.'}\n\n**Total similar files:** ${similarFiles.length}`
+              'No other files found in the same category.'}\n\n Total similar files:  ${similarFiles.length}`
           }
           break
           
         case 'extract_insights':
-          // Show basic file information (what Summary used to show)
+          // Show basic file information 
           const isDemoInsights = file.id.startsWith('demo-file-')
           if (isDemoInsights) {
-            messageContent = `**Extract Insights Demo**\n\nÃ¢â‚¬Â¢ **Feature:** Document Analysis & Insights\nÃ¢â‚¬Â¢ **Purpose:** Extracts key information and patterns from documents\nÃ¢â‚¬Â¢ **Usage:** Upload files to get actual insights\nÃ¢â‚¬Â¢ **Status:** Ready to analyze your documents\n\n**To use with real files:** Upload documents via the Chrome extension or Files tab.`
+            messageContent = ` Extract Insights Demo \n\n  Feature:  Document Analysis & Insights\n  Purpose:  Extracts key information and patterns from documents\n  Usage:  Upload files to get actual insights\n  Status:  Ready to analyze your documents\n\n To use with real files:  Upload documents via the Chrome extension or Files tab.`
           } else {
-            messageContent = `**File Insights for "${file.name}"**\n\nÃ¢â‚¬Â¢ **File Name:** ${file.name}\nÃ¢â‚¬Â¢ **Proposed Category:** ${file.proposed_category}\nÃ¢â‚¬Â¢ **Type:** Document file\nÃ¢â‚¬Â¢ **Status:** Available for organization\n\nThis file has been analyzed and categorized. You can approve its organization in the Files tab.`
+            messageContent = ` File Insights for "${file.name}" \n\n  File Name:  ${file.name}\n  Proposed Category:  ${file.proposed_category}\n  Type:  Document file\n  Status:  Available for organization\n\nThis file has been analyzed and categorized. You can approve its organization in the Files tab.`
           }
           break
           
@@ -987,15 +682,15 @@ export default function App() {
           // Redirect to Files tab for organization
           const isDemoOrganize = file.id.startsWith('demo-file-')
           if (isDemoOrganize) {
-            messageContent = `**Organize Files Demo**\n\nÃ¢â‚¬Â¢ **Feature:** File Organization\nÃ¢â‚¬Â¢ **Purpose:** Automatically categorizes and organizes documents\nÃ¢â‚¬Â¢ **Usage:** Upload files to organize them into folders\nÃ¢â‚¬Â¢ **Status:** Ready to organize your documents\n\n**To use with real files:** Upload documents via the Chrome extension, then use the Files tab to approve organization.`
+            messageContent = ` Organize Files Demo \n\n  Feature:  File Organization\n  Purpose:  Automatically categorizes and organizes documents\n  Usage:  Upload files to organize them into folders\n  Status:  Ready to organize your documents\n\n To use with real files:  Upload documents via the Chrome extension, then use the Files tab to approve organization.`
           } else {
             setTab('drive')
-            messageContent = `**Organization for "${file.name}"**\n\nÃ¢â‚¬Â¢ **Target Category:** ${file.proposed_category}\nÃ¢â‚¬Â¢ **Action Required:** Please go to the Files tab to approve this file's organization\nÃ¢â‚¬Â¢ **Status:** Redirected to Files tab\n\nYou can now find this file in the Files tab and click "Approve" to organize it properly.`
+            messageContent = ` Organization for "${file.name}" \n\n  Target Category:  ${file.proposed_category}\n  Action Required:  Please go to the Files tab to approve this file's organization\n  Status:  Redirected to Files tab\n\nYou can now find this file in the Files tab and click "Approve" to organize it properly.`
           }
           break
           
         case 'multi_files':
-          // Always set up multi-file analysis (no demo mode for multi-files)
+          // Always set up multi-file analysis 
           // Set up multi-file analysis
             setCurrentQuickAction('multi_files')
             setShowDocumentSelector(true)
@@ -1070,7 +765,7 @@ export default function App() {
           </button>
         </div>
       )}
-      {/* Professional Background Effects */}
+      {/*  Background Effects */}
       <div className="professional-shapes">
         <div className="professional-shape"></div>
         <div className="professional-shape"></div>
@@ -1078,22 +773,22 @@ export default function App() {
         <div className="professional-shape"></div>
       </div>
       
-      {/* Professional Particle System */}
+      {/* Particle System */}
       <div className="professional-particles" id="professional-particles"></div>
       
-      {/* Professional Wave Effects */}
+      {/* Wave Effects */}
       <div className="professional-waves">
         <div className="professional-wave"></div>
         <div className="professional-wave"></div>
         <div className="professional-wave"></div>
       </div>
       
-      {/* Beautiful Floating Orbs */}
+      {/*  Floating Orbs */}
       <div className="beautiful-orb"></div>
       <div className="beautiful-orb"></div>
       <div className="beautiful-orb"></div>
       
-      {/* Professional Mouse Trail */}
+      {/* Mouse Trail */}
       <div className="professional-mouse-trail" id="professional-mouse-trail"></div>
       
       {/* Main content with higher z-index to appear above background */}
@@ -1135,13 +830,11 @@ export default function App() {
             </nav>
           </div>
         </header>
-
-        {/* Beautiful Theme-Matching Notification - moved to global fixed container at bottom */}
-
+        {/*  Notification - moved to global fixed container at bottom */}
         <div className="page-transition">
           {tab==='dashboard' && (
             <Section>
-              {/* Enhanced Hero Section */}
+              {/*  */}
               <div className="text-center py-16 fade-in relative">
                 <div className="relative z-10 max-w-6xl mx-auto px-6">
                 <h1 className="hero-heading mb-6">Welcome to Clarifile</h1>
@@ -1200,7 +893,7 @@ export default function App() {
                     )}
                   </Button>
                   
-                  {/* Enhanced Progress Display */}
+                  {/*  Progress Display */}
                   {isScanning && (
                     <div className="mt-12 max-w-2xl mx-auto fade-in">
                       <div className="professional-card">
@@ -1223,7 +916,7 @@ export default function App() {
                 </div>
               </div>
               
-              {/* Enhanced Stats Section */}
+              {/*  Stats Section */}
               <div className="grid gap-6 md:grid-cols-4 mb-16">
                 <div className="professional-card dark-card fade-in" style={{animationDelay: '0.4s'}}>
                   <div className="cool-icon mb-4">
@@ -1265,7 +958,7 @@ export default function App() {
                 </div>
               </div>
               
-              {/* Enhanced Document Proposals Section */}
+              {/*  Document Proposals Section */}
               <div className="fade-in" style={{animationDelay: '0.8s'}}>
                 <div className="proposals-section-header">
                   <h2 className="proposals-section-title">
@@ -1540,7 +1233,7 @@ export default function App() {
                               setNotification('Analyzing file...');
                               console.log('Set notification to Analyzing file...');
                               
-                              // Actually call the backend to analyze the file
+                              //  call the backend to analyze the file
                               call('/drive/analyze', {
                                 method: 'POST',
                                 headers: {
@@ -1577,7 +1270,7 @@ export default function App() {
                                 if (response.summary) {
                                   appendToChat(file.id, {
                                     role: 'assistant',
-                                    content: `I've analyzed the file **"${file.name}"**. Here's what I found:\n\n${response.summary}\n\nYou can now ask me questions about this file!`
+                                    content: `I've analyzed the file  "${file.name}" . Here's what I found:\n\n${response.summary}\n\nYou can now ask me questions about this file!`
                                   });
                                   console.log('Added analysis to AI Assistant chat');
                                 }
@@ -1601,7 +1294,7 @@ export default function App() {
                             <button 
                               className={`file-action-button ${file.approved ? 'approved' : 'approve'}`}
                               onClick={async () => {
-                                if (file.approved) return; // Don't do anything if already approved
+                                if (file.approved) return; 
                                 
                                 const label = (customLabels[file.id] && customLabels[file.id].trim()) ? customLabels[file.id].trim() : file.proposed_category;
                                 if (!label) { 
@@ -1927,7 +1620,7 @@ export default function App() {
                                         </div>
                                       )}
 
-                                      {/* Enhanced Download Button */}
+                                      {/*  Download Button */}
                                       <DownloadButton message={msg} className="mt-3" />
                                       
                                       {/* Fallback Download for Flowcharts */}
@@ -1937,7 +1630,7 @@ export default function App() {
                                             className="professional-btn professional-btn-primary text-sm"
                                             type="button"
                                             onClick={() => {
-                                              // Direct download - no complex logic
+                                              // Direct download 
                                               const mermaidUrl = 'https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgICBBW1N0YXJ0XSAtLT4gQltQcmVwYXJhdGlvbl0KICAgIEIgLS0-IENbIkJlZ2luIHByb2Nlc3MiXQogICAgQyAtLT4gRFsiRXhlY3V0ZSBtYWluIHRhc2tzIl0KICAgIEQgLS0-IEVbIkNvbXBsZXRlIG9iamVjdGl2ZXMiXQogICAgRSAtLT4gRltDb21wbGV0ZV0=';
                                               
                                               fetch(mermaidUrl)
@@ -2263,11 +1956,11 @@ export default function App() {
                       
                       // Create a combined chat for multi-file analysis
                       const multiFileId = `multi_${Date.now()}`
-                      let analysisContent = `**Multi-File Analysis Results**\n\n**Query:** ${multiFileQuery}\n**Output Type:** ${multiFileOutputType}\n**Files Analyzed:** ${selectedFiles.length}\n\n**Analysis:**\n\n${response.analysis}`
+                      let analysisContent = ` Multi-File Analysis Results \n\n Query:  ${multiFileQuery}\n Output Type:  ${multiFileOutputType}\n Files Analyzed:  ${selectedFiles.length}\n\n Analysis: \n\n${response.analysis}`
                       
                       // Add download info if assistant data is available
                       if (response.assistant && response.assistant.type === 'download') {
-                        analysisContent += `\n\n**📥 Downloadable ${response.assistant.kind.replace('_', ' ')} available as ${response.assistant.filename}**`
+                        analysisContent += `\n\n 📥 Downloadable ${response.assistant.kind.replace('_', ' ')} available as ${response.assistant.filename} `
                       }
                       
                       // Create a dummy file object for the multi-file chat with original files stored
@@ -2284,6 +1977,7 @@ export default function App() {
                       setChats(prev => ({
                         ...prev,
                         [multiFileId]: {
+                          id: multiFileId,
                           file: multiFileObject,
                           originalFiles: selectedFileObjects, // Store original files for follow-up questions
                           messages: [
@@ -2336,36 +2030,3 @@ export default function App() {
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

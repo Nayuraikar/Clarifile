@@ -1,4 +1,3 @@
-# --- CONFIG ---
 import os
 import time
 import requests
@@ -6,7 +5,6 @@ import re
 import nltk
 from typing import Dict
 from nltk.tokenize import sent_tokenize
-
 # Ensure NLTK resources are downloaded with fallback
 def ensure_nltk_punkt():
     """Ensure punkt tokenizer is available with fallback handling."""
@@ -19,7 +17,7 @@ def ensure_nltk_punkt():
             break
         except LookupError:
             continue
-    
+   
     if not punkt_available:
         # Try to download punkt_tab first, then punkt as fallback
         for punkt_name in ['punkt_tab', 'punkt']:
@@ -31,7 +29,7 @@ def ensure_nltk_punkt():
             except Exception as e:
                 print(f"Failed to download {punkt_name}: {e}")
                 continue
-        
+       
         if not punkt_available:
             print("Warning: Failed to download punkt tokenizer. Sentence tokenization may not work properly.")
 
@@ -76,8 +74,7 @@ _KEY_FAILURES = {}  # Track failures per key index
 _KEY_LAST_USED = {}  # Track last usage time per key index
 _RATE_LIMITED_KEYS = set()  # Track which keys are currently rate limited
 
-
-# --- Utilities ---
+#Utilities 
 def _safe_post_with_key_rotation(payload: dict):
     """POST with retries and API key rotation; returns JSON (or raises).
     - Tries current key, on 401/403/429 or network errors rotates to next key.
@@ -151,7 +148,6 @@ def _safe_post_with_key_rotation(payload: dict):
 
     raise last_exc or RuntimeError("All API keys failed")
 
-
 def _extract_generated_text(resp_json: dict) -> str:
     """
     Extract text from Gemini response safely.
@@ -181,8 +177,7 @@ def _extract_generated_text(resp_json: dict) -> str:
     all_texts = find_texts(resp_json)
     return " ".join(all_texts).strip()
 
-
-# --- Gemini call ---
+# Gemini call 
 def gemini_generate(prompt: str, temperature: float = 0.0, max_output_tokens: int = 256) -> str:
     """
     Call Gemini generateContent endpoint using API key.
@@ -192,11 +187,12 @@ def gemini_generate(prompt: str, temperature: float = 0.0, max_output_tokens: in
         print("No Gemini API keys configured")
         return ""
 
+
     payload = {
         "contents": [
             {"parts": [{"text": prompt}]}
         ],
-        "generationConfig": {          # FIXED: correct place for params
+        "generationConfig": {          
             "temperature": float(temperature),
             "maxOutputTokens": int(max_output_tokens),
         }
@@ -219,8 +215,7 @@ def gemini_generate(prompt: str, temperature: float = 0.0, max_output_tokens: in
         print(f"Gemini API error: {repr(e)}")
         return ""
 
-
-# --- Chunking helper ---
+# Chunking helper
 def smart_chunks(text: str, max_words: int = 600, stride: int = 120):
     """
     Split text into overlapping chunks made of whole sentences.
@@ -246,8 +241,7 @@ def smart_chunks(text: str, max_words: int = 600, stride: int = 120):
     if chunk_words:
         yield " ".join(chunk_words)
 
-
-# --- Main QA using Gemini ---
+# Main QA using Gemini 
 def best_answer_or_summary(question: str, context_text: str) -> Dict:
     """
     Use Gemini to answer a question from context_text.
@@ -287,10 +281,7 @@ def best_answer_or_summary(question: str, context_text: str) -> Dict:
     final_generated = gemini_generate(prompt, temperature=0.2, max_output_tokens=400)
     return {"answer": final_generated.strip(), "score": 1.0 if final_generated else 0.0, "context": context_text}
 
-
-# Backward compatibility
 best_answer = best_answer_or_summary
-
 
 def extract_entities(text: str):
     """
@@ -309,18 +300,9 @@ def extract_entities(text: str):
 def summarize_with_gemini(long_text: str, max_tokens: int = 512) -> str:
     """
     Generate a summary of the input text while preserving any bold formatting.
-    
-    Args:
-        long_text: The input text to summarize
-        max_tokens: Maximum number of tokens for the summary
-        
-    Returns:
-        str: A summary with preserved bold formatting (text between **)
     """
     if not long_text.strip():
         return ""
-
-    # Try Gemini API first
     try:
         prompt = (
             "Summarize the following text into a concise, clear paragraph. "
@@ -332,23 +314,23 @@ def summarize_with_gemini(long_text: str, max_tokens: int = 512) -> str:
             f"TEXT TO SUMMARIZE:\n{long_text}\n\n"
             "SUMMARY (preserve **bold** formatting):"
         )
-        
+       
         result = gemini_generate(prompt, temperature=0.3, max_output_tokens=max_tokens)
-        
+       
         if result.strip():
             return result.strip()
-            
+           
     except Exception as e:
         print(f"Gemini summarization failed: {e}")
 
-    # Fallback: simple text summarization that preserves bold formatting
+    # Fallback: simple text summarization
     print("Using fallback summarization...")
-    
+   
     # Split by sentences while preserving bold sections
     sentences = []
     current_sentence = ""
     in_bold = False
-    
+   
     for char in long_text.strip():
         current_sentence += char
         if char == '*':
@@ -357,21 +339,21 @@ def summarize_with_gemini(long_text: str, max_tokens: int = 512) -> str:
             if current_sentence.strip():
                 sentences.append(current_sentence.strip())
                 current_sentence = ""
-    
+   
     if current_sentence.strip():
         sentences.append(current_sentence.strip())
-    
+   
     # Filter out empty sentences
     sentences = [s for s in sentences if s.strip()]
 
     if not sentences:
         return ""
-        
+       
     if len(sentences) <= 2:
         summary = long_text[:500] + "..." if len(long_text) > 500 else long_text
-        # Ensure bold sections are preserved in the truncated text
+        # Ensure bold sections are preserved
         if '**' in long_text and '**' not in summary:
-            # If we lost bold markers in truncation, add them back
+           
             bold_sections = re.findall(r'\*\*(.*?)\*\*', long_text)
             for section in bold_sections:
                 if section in summary:
@@ -386,16 +368,16 @@ def summarize_with_gemini(long_text: str, max_tokens: int = 512) -> str:
         summary_parts.append(sentences[-1])  # last sentence
 
     summary = ' '.join(summary_parts)
-    # Ensure we don't double up periods
+   
     summary = re.sub(r'\.\.+', '.', summary)
-    
+   
     # Ensure bold sections are preserved in the final summary
     if '**' in long_text and '**' not in summary:
         bold_sections = re.findall(r'\*\*(.*?)\*\*', long_text)
         for section in bold_sections:
             if section in summary and f'**{section}**' not in summary:
                 summary = summary.replace(section, f'**{section}**')
-    
+   
     return summary[:500] + "..." if len(summary) > 500 else summary
 
 def classify_with_gemini(content: str) -> str:
@@ -406,11 +388,11 @@ def classify_with_gemini(content: str) -> str:
     if not content.strip():
         return "Uncategorized"
 
-    # Extract the first 2000 characters for analysis (to avoid token limits)
-    analysis_text = content[:2000]
+    # Extract the first 5000 characters for analysis (to avoid token limits)
+    analysis_text = content[:5000]
     text_lower = analysis_text.lower()
-    
-    # ===== EXPLICIT ACADEMIC PAPER DETECTION =====
+   
+    #EXPLICIT ACADEMIC PAPER DETECTION 
     # Check for academic paper indicators first (before Gemini)
     academic_keywords = [
         'abstract', 'introduction', 'methodology', 'experiment', 'results', 'discussion',
@@ -421,11 +403,10 @@ def classify_with_gemini(content: str) -> str:
         'related work', 'background', 'experimental results', 'evaluation', 'findings',
         'contribution', 'limitation', 'future work', 'appendix'
     ]
-    
+   
     # Count academic indicators in the text
     academic_score = sum(1 for word in academic_keywords if word in text_lower)
-    
-    # If we have multiple academic indicators, it's definitely a research paper
+   
     if academic_score >= 2:
         print(f"Academic paper detected with score {academic_score}")
         # Further refine the category based on content
@@ -439,18 +420,17 @@ def classify_with_gemini(content: str) -> str:
             return "Physics: Research Paper"
         else:
             return "Academic: Research Paper"
-    
+   
     # Check for PDFs with academic structure
     if '.pdf' in content.lower() and len(analysis_text) > 500:
         # Look for section headers that indicate academic content
         section_headers = ['abstract', 'introduction', 'method', 'result', 'conclusion', 'reference']
         section_count = sum(1 for section in section_headers if f"\n{section}" in text_lower)
-        
+       
         if section_count >= 2:  # At least 2 academic sections found
             print(f"PDF with academic structure detected: {section_count} sections found")
             return "Academic: Research Paper"
-    
-    # ===== GEMINI CLASSIFICATION =====
+
     # Only try Gemini if we haven't already classified it as an academic paper
     try:
         prompt = (
@@ -477,37 +457,34 @@ def classify_with_gemini(content: str) -> str:
 
         # Basic validation and cleaning of the response
         if result and len(result) > 2 and len(result) <= 100:
-            # If the response doesn't contain a colon, try to format it
             if ':' not in result:
-                # If it's a single word, make it a main category
                 if ' ' not in result:
                     return f"{result}: General"
-                # Otherwise, take the first word as category, rest as subcategory
                 parts = result.split()
                 return f"{parts[0]}: {' '.join(parts[1:])}"
-            
-            # Check if the category and subcategory are the same (e.g., "Shopping: Shopping")
+           
+            # Check if the category and subcategory are the same
             if ':' in result:
                 main_category, subcategory = result.split(':', 1)
                 main_category = main_category.strip()
                 subcategory = subcategory.strip()
                 if main_category.lower() == subcategory.lower():
-                    return main_category  # Return just "Shopping" instead of "Shopping: Shopping"
-            
+                    return main_category  
+           
             return result
 
         print(f"Gemini returned invalid result: '{result}' for content: {analysis_text[:100]}...")
 
     except Exception as e:
         print(f"Gemini classification failed: {e}")
-        
-    # ===== FALLBACK CLASSIFICATION =====
+       
+    #  FALLBACK CLASSIFICATION 
     print("Using enhanced fallback classification...")
-    
+   
     # Define document type keywords and their categories
     doc_keywords = {
         'Academic: Research Paper': [
-            'abstract', 'introduction', 'methodology', 'experiment', 'results', 'discussion', 
+            'abstract', 'introduction', 'methodology', 'experiment', 'results', 'discussion',
             'conclusion', 'references', 'bibliography', 'citation', 'literature review',
             'peer-reviewed', 'academic', 'research', 'study', 'paper', 'thesis', 'dissertation',
             'conference', 'journal', 'publication', 'author', 'affiliation', 'university',
@@ -533,20 +510,20 @@ def classify_with_gemini(content: str) -> str:
             'action items', 'attendees', 'discussion points', 'meeting notes'
         ]
     }
-    
-    # Count keyword matches for each category
+   
+
     category_scores = {}
     for category, keywords in doc_keywords.items():
         score = sum(1 for word in keywords if word in text_lower)
         if score > 0:
             category_scores[category] = score
-    
+   
     # If we have matches, return the category with the highest score
     if category_scores:
         best_category = max(category_scores.items(), key=lambda x: x[1])[0]
         print(f"Fallback classification: {best_category} (score: {category_scores[best_category]})")
         return best_category
-    
+   
     # Check for PDFs with academic structure
     if '.pdf' in content.lower() and len(analysis_text) > 500:
         section_headers = ['abstract', 'introduction', 'method', 'result', 'conclusion', 'reference']
@@ -554,11 +531,10 @@ def classify_with_gemini(content: str) -> str:
         if section_count >= 2:
             print(f"PDF with academic structure detected: {section_count} sections")
             return "Academic: Research Paper"
-    
+   
     # Final fallback based on content length
     if len(analysis_text) > 500:  # Substantial content
         return "General: Document"
     elif '.pdf' in content.lower():
         return "Academic: Research Paper"  # Default for PDFs we're not sure about
-    
     return "Uncategorized: General"

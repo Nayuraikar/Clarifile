@@ -17,8 +17,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 # Import the query expander using absolute import
-from services.parser.query_expander import QueryExpander, query_expander
-from services.parser.search_cache import EmbeddingCache, ChunkCache
+from services.parser.search_utils_combined import QueryExpander, query_expander
+from services.parser.search_utils_combined import EmbeddingCache, ChunkCache
 
 def smart_chunks(
     text: str, 

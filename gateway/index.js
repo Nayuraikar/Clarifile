@@ -21,9 +21,9 @@ let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = '901002840369-9m5hr6ds4aqs5o2f2laii829e9erhokp.apps.googleusercontent.com'; 
-const CLIENT_SECRET = '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';                         
-const REDIRECT_URI = 'https://neepjoabiciilinlopdkpkdifikblaei.chromiumapp.org/';
+const CLIENT_ID = '93338552051-s4qd52pueldgn39httavlf0o8j142obr.apps.googleusercontent.com'; 
+const CLIENT_SECRET = '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';                         
+const REDIRECT_URI = 'https://kmabjfpaggdgcdcoplagkjibcnpkpkkm.chromiumapp.org/';
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {

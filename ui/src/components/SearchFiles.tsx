@@ -18,7 +18,6 @@ interface SearchResult {
 interface SearchResponse {
   query: string;
   file_type?: string;
-  total_matches: number;
   results: SearchResult[];
   search_terms: string[];
 }
@@ -32,7 +31,7 @@ const SearchFiles: React.FC = () => {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [isFocused, setIsFocused] = useState(false);
   const [isVisualSearch, setIsVisualSearch] = useState(false);
@@ -76,15 +75,68 @@ const SearchFiles: React.FC = () => {
     });
   };
 
+  const handleDownload = async (fileId: string, fileName: string) => {
+    try {
+      const authToken = localStorage.getItem('drive_token') || '';
+      if (!authToken) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlToken = urlParams.get('auth_token');
+        if (urlToken) {
+          localStorage.setItem('drive_token', urlToken);
+        }
+      }
+      
+      const token = localStorage.getItem('drive_token') || '';
+      const response = await fetch(`http://localhost:4000/download/${fileId}?auth_token=${encodeURIComponent(token)}`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (error) {
+      console.error('Download error:', error);
+      alert('Failed to download file. Please try again.');
+    }
+  };
+
   // Get file icon based on mime type
   const getFileIcon = (mimeType: string) => {
-    if (mimeType?.includes('pdf')) return <FileText className="w-5 h-5" />;
-    if (mimeType?.includes('spreadsheet') || mimeType?.includes('sheet')) return <FileSpreadsheet className="w-5 h-5" />;
-    if (mimeType?.includes('presentation')) return <FilePresentation className="w-5 h-5" />;
-    if (mimeType?.includes('image')) return <ImageIcon className="w-5 h-5" />;
-    if (mimeType?.includes('video')) return <Film className="w-5 h-5" />;
-    if (mimeType?.includes('audio')) return <Music className="w-5 h-5" />;
-    return <FileText className="w-5 h-5" />;
+    if (!mimeType) return <FileText className="w-6 h-6" />;
+    
+    if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('sheet')) {
+      return <FileSpreadsheet className="w-6 h-6" />;
+    } else if (mimeType.includes('document') || mimeType.includes('word') || mimeType.includes('text/plain') || mimeType.endsWith('pdf')) {
+      return <FileText className="w-6 h-6" />;
+    } else if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) {
+      return <FilePresentation className="w-6 h-6" />;
+    } else if (mimeType.startsWith('image/')) {
+      return <ImageIcon className="w-6 h-6" />;
+    } else if (mimeType.startsWith('audio/')) {
+      return <Music className="w-6 h-6" />;
+    } else if (mimeType.startsWith('video/')) {
+      return <Film className="w-6 h-6" />;
+    } else if (mimeType.includes('code') || mimeType.includes('javascript') || mimeType.includes('python') || mimeType.includes('json') || mimeType.includes('xml')) {
+      return <Code className="w-6 h-6" />;
+    } else if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('archive')) {
+      return <Archive className="w-6 h-6" />;
+    } else if (mimeType.includes('email') || mimeType.includes('message')) {
+      return <Mail className="w-6 h-6" />;
+    } else if (mimeType.includes('pdf')) {
+      return <FileText className="w-6 h-6" />;
+    } else {
+      return <FileText className="w-6 h-6" />;
+    }
   };
 
   // Handle search
@@ -511,28 +563,14 @@ const SearchFiles: React.FC = () => {
                     </div>
                    
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900 truncate">
-                          {result.name}
-                        </h3>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                          {result.mimeType?.split('/').pop()?.toUpperCase() || 'FILE'}
-                        </span>
-                        <div className="flex items-center gap-1 text-sm text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          {(() => {
-                            // Priority order: confidence (already percentage) > match_score (0-1) > score (0-1)
-                            if (result.confidence !== undefined && result.confidence > 0) {
-                              return Math.round(result.confidence);
-                            } else if (result.match_score !== undefined && result.match_score > 0) {
-                              return Math.round(result.match_score * 100);
-                            } else if (result.score !== undefined && result.score > 0) {
-                              return Math.round(result.score * 100);
-                            }
-                            return 0;
-                          })()}% match
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-lg font-semibold text-gray-900 truncate">
+                            {result.name}
+                          </h3>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                            {result.mimeType?.split('/').pop()?.toUpperCase() || 'FILE'}
+                          </span>
                         </div>
-                      </div>
                      
                       <p className="text-gray-600 mb-3 line-clamp-2 leading-relaxed">
                         {result.context}
@@ -545,7 +583,7 @@ const SearchFiles: React.FC = () => {
                           </svg>
                           {formatDate(result.modifiedTime)}
                         </div>
-                       
+                        
                         {result.size && (
                           <div className="flex items-center gap-1">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -554,17 +592,24 @@ const SearchFiles: React.FC = () => {
                             {formatFileSize(result.size)}
                           </div>
                         )}
-                       
-                        <div className="flex items-center gap-1">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                          </svg>
-                          {result.match_type}
-                        </div>
                       </div>
                     </div>
-                   
-                    <div className="flex-shrink-0 flex flex-col gap-2">
+                    
+                    <div className="flex-shrink-0 flex gap-2">
+                      <button
+                        onClick={() => handleDownload(result.id, result.name)}
+                        className="inline-flex items-center justify-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                        style={{ backgroundColor: 'rgb(100, 116, 139)' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgb(80, 96, 119)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgb(100, 116, 139)';
+                        }}
+                      >
+                        <Download className="w-4 h-4 mr-1.5" />
+                        Download
+                      </button>
                       <a
                         href={result.drive_url}
                         target="_blank"
@@ -581,14 +626,6 @@ const SearchFiles: React.FC = () => {
                         <ExternalLink className="w-4 h-4 mr-1.5" />
                         Open in Drive
                       </a>
-                     
-                      <button
-                        type="button"
-                        className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                      >
-                        <MessageCircle className="w-4 h-4 mr-1.5" />
-                        Chat
-                      </button>
                     </div>
                   </div>
                 </div>
