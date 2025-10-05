@@ -21,9 +21,9 @@ let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = 'xxxx.apps.googleusercontent.com'; 
-const CLIENT_SECRET = 'xxxx';                         
-const REDIRECT_URI = 'https://xxxx.chromiumapp.org/';
+const CLIENT_ID = 'xxxxx-your-client-id--xxxxx.apps.googleusercontent.com'; 
+const CLIENT_SECRET = 'xxxxxx-your-client-secret-xxxx';                         
+const REDIRECT_URI = 'https://xxxxx-your-redirect-url-xxxx.chromiumapp.org/';
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
