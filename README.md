@@ -45,7 +45,7 @@ cd hackucchino_RVCE_4_NayanaJagadishRaikar
 ### 2. Create and Activate Virtual Environment
 
 ```bash
-python -m venv .venv
+py -3.12 -m venv .venv
 ```
 
 Activate the environment:
@@ -84,7 +84,13 @@ npm install
 ## Google OAuth 2.0 Setup for Clarifile
 
 Clarifile uses **Google OAuth 2.0** for secure Google Drive access. Follow the setup process below.
-**Use test gmail for faster setup: clarifiletester@gmail.com**
+
+To streamline your testing process, we’ve provided a preconfigured test account that already has most integrations and credentials set up.
+
+**Test Gmail (Recommended):** clarifiletester@gmail.com
+Note: This account is pre-linked with Google Drive and Gemini API access for faster setup.
+
+Using this test account is highly recommended for quick evaluation — it avoids additional OAuth configuration steps and helps conserve Gemini API tokens, which have limited usage under our current setup.
 
 **Refer to the setup guide:**  [Setup Guide]( https://drive.google.com/file/d/13FWE3T-Qzh8-_KpBorFleiJqmPsdE39O/view?usp=sharing)
 
