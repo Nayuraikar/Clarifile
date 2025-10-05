@@ -2,20 +2,7 @@
   function ensureButton() {
     if (document.getElementById('clarifile-organize-btn')) return;
 
-    // Create floating button
-    const btn = document.createElement('button');
-    btn.id = 'clarifile-organize-btn';
-    btn.textContent = 'Organize with Clarifile';
-    btn.style.position = 'fixed';
-    btn.style.right = '16px';
-    btn.style.bottom = '16px';
-    btn.style.padding = '10px 14px';
-    btn.style.zIndex = 99999;
-    btn.style.background = '#1a73e8';
-    btn.style.color = '#fff';
-    btn.style.border = 'none';
-    btn.style.borderRadius = '6px';
-    btn.style.cursor = 'pointer';
+    
 
     // On click → fetch Drive files via background, then send to backend
     btn.onclick = async () => {
