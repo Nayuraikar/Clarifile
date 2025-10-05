@@ -21,9 +21,9 @@ let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = '307125841367-2f332on0ssuiqsmjldue413079667b4a.apps.googleusercontent.com'; 
-const CLIENT_SECRET = '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';                         
-const REDIRECT_URI = 'https://lmaopjlipjagfdeoaklpooeengepemdl.chromiumapp.org/';
+const CLIENT_ID = 'xxxxxxx.apps.googleusercontent.com'; 
+const CLIENT_SECRET = 'xxxxx';                         
+const REDIRECT_URI = 'https://xxxxxxchromiumapp.org/';
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
@@ -724,35 +724,7 @@ app.post('/drive/analyze', async (req, res) => {
       }
     }
     
-    // Check if analysis resulted in a new category and auto-update
-    if (r.data && req.body?.file?.id) {
-      const currentCategory = r.data.category;
-      const fileId = req.body.file.id;
-      
-      // If we have a new category from analysis, automatically update it
-      if (currentCategory && currentCategory !== 'Unknown') {
-        try {
-          console.log(`AUTO-UPDATING category for file ${fileId} to: ${currentCategory}`);
-          
-          // Call the update category endpoint internally
-          await axios.post(`${PARSER}/update_category`, {
-            file_id: fileId,
-            new_category: currentCategory,
-            auth_token: req.body.auth_token || DRIVE_TOKEN
-          });
-          
-          console.log(`Successfully auto-updated category for ${fileId} to ${currentCategory}`);
-          
-          // Mark in response that category was auto-updated
-          r.data.category_auto_updated = true;
-          
-        } catch (updateError) {
-          console.error('Failed to auto-update category:', updateError.response?.data || updateError.message);
-          // Don't fail the whole request if category update fails
-          r.data.category_update_failed = true;
-        }
-      }
-    }
+    // Category auto-update functionality has been removed as requested
     
     res.json(r.data);
   } catch (e) { res.status(500).json({ error: e.toString() }); }

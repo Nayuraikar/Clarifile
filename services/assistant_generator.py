@@ -52,203 +52,57 @@ def clean_text_for_mermaid(text: str) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
+def extract_key_concepts(text: str, max_concepts: int = 5) -> list:
+    """Extract key concepts from text for use in flowcharts"""
+    from collections import Counter
+    import re
+    
+    # Remove code blocks and special characters
+    clean_text = re.sub(r'```[\s\S]*?```', '', text)  # Remove code blocks
+    clean_text = re.sub(r'[^\w\s-]', ' ', clean_text)  # Keep only words, spaces, and hyphens
+    
+    # Tokenize and count words (excluding stop words)
+    words = re.findall(r'\b\w{3,}\b', clean_text.lower())
+    stop_words = {'the', 'and', 'for', 'with', 'this', 'that', 'from', 'have', 'which', 'their', 'they', 'them', 'then', 'there', 'were', 'when', 'what', 'where'}
+    filtered_words = [w for w in words if w not in stop_words and len(w) > 3]
+    
+    # Get most common words
+    word_counts = Counter(filtered_words)
+    return [word for word, _ in word_counts.most_common(max_concepts)]
+
 def generate_flowchart_mermaid(text: str) -> str:
-    """Generate a proper Mermaid flowchart with decision diamonds and proper structure"""
+    """Generate a Mermaid flowchart based on the actual content of the analyzed file"""
     # Clean the input text first
     text = clean_text_for_mermaid(text)
-    all_content = text.lower()
+    if not text.strip():
+        return 'flowchart TD\n    A[No content to generate flowchart]'
     
-    # Detect content type and create appropriate flowchart
+    # Extract key concepts from the text
+    concepts = extract_key_concepts(text, max_concepts=5)
+    
+    # Start building the flowchart
     mermaid = ["flowchart TD"]
     
-    # Travel/Trip flowchart
-    if any(word in all_content for word in ['trip', 'travel', 'visit', 'vacation', 'italy', 'rome', 'florence', 'venice', 'hotel', 'flight']):
-        # Extract cities or destinations from content
-        cities = []
-        if 'rome' in all_content:
-            cities.append('Rome')
-        if 'florence' in all_content:
-            cities.append('Florence') 
-        if 'venice' in all_content:
-            cities.append('Venice')
-        
-        if not cities:
-            # Generic travel flowchart
-            cities = ['Destination 1', 'Destination 2', 'Destination 3']
-        
-        # Create travel itinerary flowchart
-        mermaid.extend([
-            '    A[Start Trip] --> B[Pack and Prepare]',
-            '    B --> C[Travel to First Destination]'
-        ])
-        
-        # Add cities dynamically
-        prev_node = 'C'
-        for i, city in enumerate(cities):
-            current_node = chr(68 + i)  # D, E, F, etc.
-            next_node = chr(69 + i) if i < len(cities) - 1 else 'Z'
-            
-            mermaid.append(f'    {prev_node} --> {current_node}[Explore {city}]')
-            if i < len(cities) - 1:
-                mermaid.append(f'    {current_node} --> {next_node}[Travel to Next City]')
-                prev_node = next_node
-            else:
-                mermaid.append(f'    {current_node} --> Z[Return Home]')
-        
-        mermaid.append('    Z --> Y[End Trip]')
+    # Add start node
+    mermaid.append('    A[Start]')
     
-    # Algorithm/Process flowchart
-    elif any(word in all_content for word in ['algorithm', 'process', 'step', 'method', 'procedure']):
-        if 'sort' in all_content or 'merge' in all_content:
-            # Sorting algorithm flowchart
-            mermaid.extend([
-                '    A[Start] --> B[Read input data]',
-                '    B --> C{Is data size less than 2?}',
-                '    C -->|Yes| D[Return data]',
-                '    C -->|No| E[Apply sorting algorithm]',
-                '    E --> F[Process elements]',
-                '    F --> G[Combine results]',
-                '    G --> H[Return sorted result]',
-                '    H --> I[End]'
-            ])
-        elif 'search' in all_content:
-            # Search algorithm flowchart
-            mermaid.extend([
-                '    A[Start] --> B[Initialize search]',
-                '    B --> C{Element found?}',
-                '    C -->|Yes| D[Return position]',
-                '    C -->|No| E{More elements?}',
-                '    E -->|Yes| F[Check next element]',
-                '    F --> C',
-                '    E -->|No| G[Return not found]',
-                '    D --> H[End]',
-                '    G --> H'
-            ])
-        else:
-            # Generic algorithm flowchart
-            mermaid.extend([
-                '    A[Start] --> B[Initialize variables]',
-                '    B --> C[Read input]',
-                '    C --> D{Condition met?}',
-                '    D -->|Yes| E[Execute main logic]',
-                '    D -->|No| F[Handle alternative]',
-                '    E --> G[Process result]',
-                '    F --> G',
-                '    G --> H[Output result]',
-                '    H --> I[End]'
-            ])
+    # Add concept nodes
+    prev_node = 'A'
+    for i, concept in enumerate(concepts, 1):
+        node_id = chr(65 + i)  # B, C, D, etc.
+        mermaid.append(f'    {prev_node} --> {node_id}[{concept.capitalize()}]')
+        prev_node = node_id
     
-    # Data Structure flowchart
-    elif any(word in all_content for word in ['data structure', 'array', 'list', 'tree', 'stack', 'queue']):
-        mermaid.extend([
-            '    A[Start] --> B[Create data structure]',
-            '    B --> C[Initialize elements]',
-            '    C --> D{Operation type?}',
-            '    D -->|Insert| E[Add element]',
-            '    D -->|Delete| F[Remove element]',
-            '    D -->|Search| G[Find element]',
-            '    E --> H[Update structure]',
-            '    F --> H',
-            '    G --> I{Element found?}',
-            '    I -->|Yes| J[Return result]',
-            '    I -->|No| K[Return not found]',
-            '    H --> L[End]',
-            '    J --> L',
-            '    K --> L'
-        ])
+    # Add end node
+    mermaid.append(f'    {prev_node} --> Z[End]')
     
-    # Decision/Analysis flowchart
-    elif any(word in all_content for word in ['decision', 'analysis', 'evaluate', 'compare', 'choose']):
-        mermaid.extend([
-            '    A[Start] --> B[Gather information]',
-            '    B --> C[Analyze options]',
-            '    C --> D{Criteria met?}',
-            '    D -->|Yes| E[Select option A]',
-            '    D -->|No| F{Alternative available?}',
-            '    F -->|Yes| G[Select option B]',
-            '    F -->|No| H[Seek more options]',
-            '    E --> I[Implement decision]',
-            '    G --> I',
-            '    H --> C',
-            '    I --> J[End]'
-        ])
+    # Add some cross-connections for better visualization
+    if len(concepts) >= 3:
+        mermaid.append(f'    {chr(65 + 1)} --> {chr(65 + 3)}')  # B -> D
+    if len(concepts) >= 5:
+        mermaid.append(f'    {chr(65 + 2)} --> {chr(65 + 4)}')  # C -> E
     
-    # Learning/Study flowchart
-    elif any(word in all_content for word in ['learn', 'study', 'understand', 'practice', 'review']):
-        mermaid.extend([
-            '    A[Start Learning] --> B[Read material]',
-            '    B --> C[Take notes]',
-            '    C --> D{Understand concepts?}',
-            '    D -->|Yes| E[Practice exercises]',
-            '    D -->|No| F[Review material]',
-            '    F --> B',
-            '    E --> G{Need more practice?}',
-            '    G -->|Yes| E',
-            '    G -->|No| H[Test knowledge]',
-            '    H --> I[Complete learning]'
-        ])
-    
-    # Generic process flowchart (fallback)
-    else:
-        # Extract key steps from content - look for bullet points, numbered lists, etc.
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
-        steps = []
-        
-        # Look for structured content (bullet points, numbered items)
-        for line in lines:
-            clean_line = clean_text_for_mermaid(line)
-            
-            # Skip very short lines or headers
-            if len(clean_line) < 5:
-                continue
-                
-            # Remove bullet points, numbers, and other markers
-            clean_line = re.sub(r'^[\-\*\•\d\.\)\(\[\]]+\s*', '', clean_line)
-            
-            # Skip lines that are just dates or locations without actions
-            if re.match(r'^[A-Za-z\s]+\([A-Za-z\s\d\-–]+\)$', clean_line):
-                continue
-                
-            # Extract meaningful action items
-            if any(action_word in clean_line.lower() for action_word in ['visit', 'buy', 'book', 'reserve', 'climb', 'try', 'pick', 'send', 'stock', 'toss']):
-                if len(clean_line) > 40:
-                    # Find a good breaking point
-                    words = clean_line.split()
-                    if len(words) > 6:
-                        clean_line = ' '.join(words[:6]) + '...'
-                    else:
-                        clean_line = clean_line[:37] + '...'
-                
-                if len(clean_line) >= 5:
-                    steps.append(clean_line)
-                    
-            if len(steps) >= 6:  # Limit to 6 steps
-                break
-        
-        # If no meaningful steps found, create generic ones based on content type
-        if len(steps) < 2:
-            if 'notes' in all_content or 'todo' in all_content:
-                steps = ["Review notes and tasks", "Prioritize important items", "Complete planned activities"]
-            elif 'plan' in all_content or 'schedule' in all_content:
-                steps = ["Create detailed plan", "Prepare necessary items", "Execute planned activities"]
-            else:
-                steps = ["Begin process", "Execute main tasks", "Complete objectives"]
-        
-        # Build content-aware flowchart
-        mermaid.append('    A[Start] --> B[Preparation]')
-        
-        for i, step in enumerate(steps):
-            node_id = chr(67 + i)  # C, D, E, F, etc.
-            step_clean = step.replace('"', "'")
-            prev_node = 'B' if i == 0 else chr(66 + i)
-            mermaid.append(f'    {prev_node} --> {node_id}["{step_clean}"]')
-        
-        # Add completion
-        last_step_id = chr(66 + len(steps))
-        end_id = chr(67 + len(steps))
-        mermaid.append(f'    {last_step_id} --> {end_id}[Complete]')
-    
-    return "\n".join(mermaid)
+    return '\n'.join(mermaid)
 
 
 def generate_short_notes(text: str) -> str:

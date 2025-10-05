@@ -30,7 +30,7 @@
     }
   ],
   "oauth2": {
-    "client_id": "307125841367-2f332on0ssuiqsmjldue413079667b4a.apps.googleusercontent.com",
+    "client_id": "xxxxxx.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/drive.file",
       "https://www.googleapis.com/auth/drive.metadata.readonly"
