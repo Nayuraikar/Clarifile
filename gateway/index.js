@@ -21,9 +21,9 @@ let DRIVE_PROPOSALS = [];
 let DRIVE_TOKEN = null;
 
 // ====== GOOGLE OAUTH CONFIG ======
-const CLIENT_ID = 'xxxxxxx.apps.googleusercontent.com'; 
-const CLIENT_SECRET = 'xxxxx';                         
-const REDIRECT_URI = 'https://xxxxxxchromiumapp.org/';
+const CLIENT_ID = 'xxxx.apps.googleusercontent.com'; 
+const CLIENT_SECRET = 'xxxx';                         
+const REDIRECT_URI = 'https://xxxx.chromiumapp.org/';
 
 // ====== UTILITY ENDPOINTS ======
 app.post('/scan', async (req, res) => {
@@ -787,10 +787,35 @@ app.post('/analyze_multi', async (req, res) => {
     const body = { ...req.body, auth_token: req.body?.auth_token || DRIVE_TOKEN };
     const r = await axios.post(`${PARSER}/analyze_multi`, body);
     res.json(r.data);
-  } catch (e) { 
-    console.error('Multi-file analysis error:', e.response?.data || e.message);
-    res.status(500).json({ error: e.response?.data?.detail || e.toString() }); 
-  }
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+// Bulk operations for search results
+app.post('/bulk_move_to_folder', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const body = { ...req.body, auth_token: req.body?.auth_token || DRIVE_TOKEN };
+    const r = await axios.post(`${PARSER}/bulk_move_to_folder`, body);
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+app.post('/bulk_delete_files', async (req, res) => {
+  try {
+    if (!DRIVE_TOKEN && !req.body?.auth_token) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const body = { ...req.body, auth_token: req.body?.auth_token || DRIVE_TOKEN };
+    const r = await axios.post(`${PARSER}/bulk_delete_files`, body);
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
+});
+
+app.get('/drive_folders', async (req, res) => {
+  try {
+    const authToken = req.query.auth_token || DRIVE_TOKEN;
+    if (!authToken) return res.status(400).json({ error: 'no drive token available; click Organize in Drive again' });
+    const r = await axios.get(`${PARSER}/drive_folders?auth_token=${encodeURIComponent(authToken)}`);
+    res.json(r.data);
+  } catch (e) { res.status(500).json({ error: e.toString() }); }
 });
 
 // Visual search files in Drive by image content

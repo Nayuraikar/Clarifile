@@ -4214,6 +4214,128 @@ def download_file(file_id: str, auth_token: str | None = Query(None)):
         print(f"Download error: {e}")
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
 
+# Bulk operations for search results
+class BulkMoveRequest(BaseModel):
+    file_ids: list[str]
+    folder_name: str
+    auth_token: str | None = None
+    create_new: bool = False
+
+class BulkDeleteRequest(BaseModel):
+    file_ids: list[str]
+    auth_token: str | None = None
+
+@app.post("/bulk_move_to_folder")
+def bulk_move_to_folder(req: BulkMoveRequest):
+    """Move multiple files to a folder (create folder if needed)"""
+    try:
+        token = req.auth_token
+        if not token:
+            raise HTTPException(status_code=400, detail="Missing auth token")
+        
+        service = get_drive_service(token)
+        if not service:
+            raise HTTPException(status_code=400, detail="Failed to initialize Drive service")
+        
+        # Get or create the target folder
+        folder_id = get_or_create_folder(service, req.folder_name)
+        if not folder_id:
+            raise HTTPException(status_code=400, detail=f"Failed to create/find folder: {req.folder_name}")
+        
+        moved_files = []
+        failed_files = []
+        
+        for file_id in req.file_ids:
+            try:
+                result = move_file_to_folder(service, file_id, folder_id)
+                if result:
+                    moved_files.append(file_id)
+                else:
+                    failed_files.append(file_id)
+            except Exception as e:
+                print(f"Failed to move file {file_id}: {e}")
+                failed_files.append(file_id)
+        
+        return {
+            "success": True,
+            "folder_name": req.folder_name,
+            "folder_id": folder_id,
+            "moved_count": len(moved_files),
+            "failed_count": len(failed_files),
+            "moved_files": moved_files,
+            "failed_files": failed_files
+        }
+    
+    except Exception as e:
+        print(f"Bulk move error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/bulk_delete_files")
+def bulk_delete_files(req: BulkDeleteRequest):
+    """Delete multiple files from Drive"""
+    try:
+        token = req.auth_token
+        if not token:
+            raise HTTPException(status_code=400, detail="Missing auth token")
+        
+        service = get_drive_service(token)
+        if not service:
+            raise HTTPException(status_code=400, detail="Failed to initialize Drive service")
+        
+        deleted_files = []
+        failed_files = []
+        
+        for file_id in req.file_ids:
+            try:
+                # Delete file using Drive API
+                service.files().delete(fileId=file_id).execute()
+                deleted_files.append(file_id)
+            except Exception as e:
+                print(f"Failed to delete file {file_id}: {e}")
+                failed_files.append(file_id)
+        
+        return {
+            "success": True,
+            "deleted_count": len(deleted_files),
+            "failed_count": len(failed_files),
+            "deleted_files": deleted_files,
+            "failed_files": failed_files
+        }
+    
+    except Exception as e:
+        print(f"Bulk delete error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/drive_folders")
+def get_drive_folders(auth_token: str | None = Query(None)):
+    """Get list of existing folders in Drive"""
+    try:
+        if not auth_token:
+            raise HTTPException(status_code=400, detail="Missing auth token")
+        
+        service = get_drive_service(auth_token)
+        if not service:
+            raise HTTPException(status_code=400, detail="Failed to initialize Drive service")
+        
+        # Query for folders
+        query = "mimeType='application/vnd.google-apps.folder' and trashed=false"
+        results = service.files().list(
+            q=query,
+            fields="files(id,name,parents)",
+            pageSize=100
+        ).execute()
+        
+        folders = results.get('files', [])
+        
+        return {
+            "success": True,
+            "folders": [{"id": f["id"], "name": f["name"]} for f in folders]
+        }
+    
+    except Exception as e:
+        print(f"Get folders error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/favicon.ico")
 def favicon():
     return {}

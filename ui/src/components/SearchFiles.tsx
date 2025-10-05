@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, FileText, Image as ImageIcon, Music, Film, FileSpreadsheet, Presentation as FilePresentation, Code, Archive, Mail, BookOpen, Loader2, Sparkles, Eye, MessageCircle, ExternalLink } from 'lucide-react';
+import { Search, X, FileText, Image as ImageIcon, Music, Film, FileSpreadsheet, Presentation as FilePresentation, Code, Archive, Mail, BookOpen, Loader2, Sparkles, Eye, MessageCircle, ExternalLink, FolderPlus, Trash2, Move, Check, Square } from 'lucide-react';
 
 interface SearchResult {
   id: string;
@@ -22,6 +22,15 @@ interface SearchResponse {
   search_terms: string[];
 }
 
+const BASE = 'http://127.0.0.1:4000';
+
+async function call(path: string, opts?: RequestInit) {
+  const res = await fetch(BASE + path, opts ? opts : {});
+  if (res.status === 204) return { ok: true };
+  const text = await res.text();
+  try { return JSON.parse(text) } catch { return { error: 'Invalid JSON', raw: text } }
+}
+
 const SearchFiles: React.FC = () => {
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -34,6 +43,15 @@ const SearchFiles: React.FC = () => {
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [isFocused, setIsFocused] = useState(false);
+  
+  // Bulk operations state
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+  const [existingFolders, setExistingFolders] = useState<{id: string, name: string}[]>([]);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [bulkOperationLoading, setBulkOperationLoading] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null);
 
   // File type options with icons
   const fileTypes = [
@@ -255,8 +273,144 @@ const SearchFiles: React.FC = () => {
     setSearchStats(null);
     setShowSuggestions(false);
     setHasSearched(false);
+    setSelectedFiles(new Set());
     if (inputRef.current) {
       inputRef.current.focus();
+    }
+  };
+
+  // Bulk operations functions
+  const toggleFileSelection = (fileId: string) => {
+    setSelectedFiles(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileId)) {
+        newSet.delete(fileId);
+      } else {
+        newSet.add(fileId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllFiles = () => {
+    if (selectedFiles.size === results.length) {
+      setSelectedFiles(new Set());
+    } else {
+      setSelectedFiles(new Set(results.map(r => r.id)));
+    }
+  };
+
+  const getAuthToken = () => {
+    return localStorage.getItem('drive_token') || new URLSearchParams(window.location.search).get('auth_token') || '';
+  };
+
+  const fetchExistingFolders = async () => {
+    try {
+      const authToken = getAuthToken();
+      const data = await call(`/drive_folders?auth_token=${encodeURIComponent(authToken)}`);
+      if (data.success) {
+        setExistingFolders(data.folders);
+      }
+    } catch (error) {
+      console.error('Error fetching folders:', error);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedFiles.size === 0) return;
+    
+    const fileNames = results.filter(r => selectedFiles.has(r.id)).map(r => r.name).join(', ');
+    if (!confirm(`Delete ${selectedFiles.size} file(s) from Drive? This action cannot be undone.\n\nFiles: ${fileNames}`)) return;
+    
+    setBulkOperationLoading(true);
+    try {
+      const authToken = getAuthToken();
+      const data = await call('/bulk_delete_files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_ids: Array.from(selectedFiles),
+          auth_token: authToken
+        })
+      });
+      
+      if (data.success) {
+        setNotification(`Successfully deleted ${data.deleted_count} file(s)`);
+        // Remove deleted files from results
+        setResults(prev => prev.filter(r => !selectedFiles.has(r.id)));
+        setSelectedFiles(new Set());
+      } else {
+        setNotification('Error deleting files. Please try again.');
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      setNotification('Error deleting files. Please try again.');
+    } finally {
+      setBulkOperationLoading(false);
+    }
+  };
+
+  const handleMoveToExistingFolder = async (folderId: string, folderName: string) => {
+    if (selectedFiles.size === 0) return;
+    
+    setBulkOperationLoading(true);
+    try {
+      const authToken = getAuthToken();
+      const data = await call('/bulk_move_to_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_ids: Array.from(selectedFiles),
+          folder_name: folderName,
+          auth_token: authToken
+        })
+      });
+      
+      if (data.success) {
+        setNotification(`Successfully moved ${data.moved_count} file(s) to "${folderName}"`);
+        setSelectedFiles(new Set());
+        setShowFolderModal(false);
+      } else {
+        setNotification('Error moving files. Please try again.');
+      }
+    } catch (error) {
+      console.error('Move to folder error:', error);
+      setNotification('Error moving files. Please try again.');
+    } finally {
+      setBulkOperationLoading(false);
+    }
+  };
+
+  const handleCreateNewFolder = async () => {
+    if (selectedFiles.size === 0 || !newFolderName.trim()) return;
+    
+    setBulkOperationLoading(true);
+    try {
+      const authToken = getAuthToken();
+      const data = await call('/bulk_move_to_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_ids: Array.from(selectedFiles),
+          folder_name: newFolderName.trim(),
+          auth_token: authToken,
+          create_new: true
+        })
+      });
+      
+      if (data.success) {
+        setNotification(`Successfully moved ${data.moved_count} file(s) to new folder "${newFolderName}"`);
+        setSelectedFiles(new Set());
+        setShowNewFolderModal(false);
+        setNewFolderName('');
+      } else {
+        setNotification('Error creating folder and moving files. Please try again.');
+      }
+    } catch (error) {
+      console.error('Create folder error:', error);
+      setNotification('Error creating folder and moving files. Please try again.');
+    } finally {
+      setBulkOperationLoading(false);
     }
   };
 
@@ -280,24 +434,44 @@ const SearchFiles: React.FC = () => {
     }
   }, []);
 
+  // Auto-dismiss notifications
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
   return (
+    <div className="min-h-screen" style={{ backgroundColor: 'rgb(245, 240, 230)' }}>
     <div className="max-w-7xl mx-auto px-4 py-8">
+      {/* Notification */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-50 text-white px-4 py-2 rounded-lg shadow-lg" style={{ backgroundColor: 'rgb(101, 67, 33)' }}>
+          {notification}
+        </div>
+      )}
+      
       {/* Search Header */}
       <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold mb-2" style={{ color: 'rgb(139, 115, 85)' }}>Find Your Files</h1>
-        <p className="text-gray-600 text-lg">Search across your documents, PDFs, and presentations with AI-powered precision</p>
+        <h1 className="text-4xl font-bold mb-2" style={{ color: 'rgb(101, 67, 33)' }}>Find Your Files</h1>
+        <p className="text-lg" style={{ color: 'rgb(139, 115, 85)' }}>Search across your documents, PDFs, and presentations with AI-powered precision</p>
       </div>
 
       {/* Search Bar */}
       <form onSubmit={handleSearch} className="mb-8">
         <div
-          className={`relative flex items-center bg-white rounded-2xl shadow-lg border-2 transition-all duration-300 ${
-            isFocused ? 'border-gray-400 shadow-gray-100' : 'border-gray-200'
-          }`}
+          className="relative flex items-center rounded-2xl shadow-lg border-2 transition-all duration-300"
+          style={{
+            backgroundColor: 'rgb(250, 248, 240)',
+            borderColor: isFocused ? 'rgb(139, 115, 85)' : 'rgb(210, 180, 140)'
+          }}
         >
-          <div className="absolute left-4 text-gray-400">
+          <div className="absolute left-4" style={{ color: 'rgb(139, 115, 85)' }}>
             {isSearching ? (
-              <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'rgb(139, 115, 85)' }} />
             ) : (
               <Search className="w-5 h-5" />
             )}
@@ -311,7 +485,10 @@ const SearchFiles: React.FC = () => {
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             placeholder="Search documents, PDFs, presentations, and more..."
-            className="w-full pl-12 pr-16 py-4 text-lg text-gray-800 bg-transparent border-none focus:ring-0 focus:outline-none placeholder-gray-400"
+            className="w-full pl-12 pr-16 py-4 text-lg bg-transparent border-none focus:ring-0 focus:outline-none placeholder-opacity-75"
+            style={{ 
+              color: 'rgb(101, 67, 33)'
+            }}
             disabled={isSearching}
           />
          
@@ -319,7 +496,10 @@ const SearchFiles: React.FC = () => {
             <button
               type="button"
               onClick={clearSearch}
-              className="absolute right-16 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              className="absolute right-16 p-1 transition-colors"
+              style={{ color: 'rgb(139, 115, 85)' }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'rgb(101, 67, 33)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'rgb(139, 115, 85)'}
               aria-label="Clear search"
             >
               <X className="w-5 h-5" />
@@ -359,9 +539,9 @@ const SearchFiles: React.FC = () => {
        
         {/* Search Suggestions */}
         {showSuggestions && suggestions.length > 0 && (
-          <div className="mt-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50 relative">
+          <div className="mt-2 rounded-lg shadow-lg border overflow-hidden z-50 relative" style={{ backgroundColor: 'rgb(250, 248, 240)', borderColor: 'rgb(210, 180, 140)' }}>
             <div className="py-1">
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 bg-gray-50">
+              <div className="px-4 py-2 text-xs font-semibold" style={{ color: 'rgb(139, 115, 85)', backgroundColor: 'rgb(245, 240, 230)' }}>
                 Try searching for:
               </div>
               {suggestions.map((suggestion, index) => (
@@ -369,9 +549,12 @@ const SearchFiles: React.FC = () => {
                   key={index}
                   type="button"
                   onClick={() => handleSuggestionClick(suggestion)}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center text-gray-700"
+                  className="w-full text-left px-4 py-2 flex items-center transition-colors"
+                  style={{ color: 'rgb(101, 67, 33)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgb(245, 240, 230)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
-                  <Search className="w-4 h-4 mr-2 text-gray-400" />
+                  <Search className="w-4 h-4 mr-2" style={{ color: 'rgb(139, 115, 85)' }} />
                   {suggestion}
                 </button>
               ))}
@@ -385,89 +568,226 @@ const SearchFiles: React.FC = () => {
       {searchStats && hasSearched && (
         <div className="mb-8">
           <div className="flex justify-center">
-            <div className="inline-flex items-center gap-8 bg-white px-8 py-4 rounded-2xl shadow-sm border border-gray-200">
+            <div className="inline-flex items-center gap-8 px-8 py-4 rounded-2xl shadow-sm border" style={{ backgroundColor: 'rgb(250, 248, 240)', borderColor: 'rgb(210, 180, 140)' }}>
               <div className="text-center">
-                <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-full mb-2">
-                  <Search className="w-6 h-6 text-gray-600" />
+                <div className="flex items-center justify-center w-12 h-12 rounded-full mb-2" style={{ backgroundColor: 'rgb(245, 240, 230)' }}>
+                  <Search className="w-6 h-6" style={{ color: 'rgb(139, 115, 85)' }} />
                 </div>
-                <div className="text-2xl font-bold text-gray-800">{searchStats.total}</div>
-                <div className="text-sm text-gray-500">Files Searched</div>
+                <div className="text-2xl font-bold" style={{ color: 'rgb(101, 67, 33)' }}>{searchStats.total}</div>
+                <div className="text-sm" style={{ color: 'rgb(139, 115, 85)' }}>Files Searched</div>
               </div>
               
               <div className="text-center">
-                <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-full mb-2">
-                  <Eye className="w-6 h-6 text-gray-600" />
+                <div className="flex items-center justify-center w-12 h-12 rounded-full mb-2" style={{ backgroundColor: 'rgb(245, 240, 230)' }}>
+                  <Eye className="w-6 h-6" style={{ color: 'rgb(139, 115, 85)' }} />
                 </div>
-                <div className="text-2xl font-bold text-gray-800">{searchStats.shown}</div>
-                <div className="text-sm text-gray-500">Matches Found</div>
+                <div className="text-2xl font-bold" style={{ color: 'rgb(101, 67, 33)' }}>{searchStats.shown}</div>
+                <div className="text-sm" style={{ color: 'rgb(139, 115, 85)' }}>Matches Found</div>
               </div>
               
               <div className="text-center">
-                <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-full mb-2">
-                  <Sparkles className="w-6 h-6 text-gray-600" />
+                <div className="flex items-center justify-center w-12 h-12 rounded-full mb-2" style={{ backgroundColor: 'rgb(245, 240, 230)' }}>
+                  <Sparkles className="w-6 h-6" style={{ color: 'rgb(139, 115, 85)' }} />
                 </div>
-                <div className="text-2xl font-bold text-gray-800">{searchStats.matchRate}%</div>
-                <div className="text-sm text-gray-500">Match Rate</div>
+                <div className="text-2xl font-bold" style={{ color: 'rgb(101, 67, 33)' }}>{searchStats.matchRate}%</div>
+                <div className="text-sm" style={{ color: 'rgb(139, 115, 85)' }}>Match Rate</div>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Search Results Header */}
+      {/* Search Results Header with Bulk Actions */}
       {hasSearched && (
         <div className="mb-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-800">
+            <h2 className="text-xl font-semibold" style={{ color: 'rgb(101, 67, 33)' }}>
               Search Results
-              {query && <span className="text-gray-500 font-normal"> for "{query}"</span>}
+              {query && <span className="font-normal" style={{ color: 'rgb(139, 115, 85)' }}> for "{query}"</span>}
             </h2>
-            <div className="text-sm text-gray-500">
+            <div className="text-sm" style={{ color: 'rgb(139, 115, 85)' }}>
               Showing {results.length} results
             </div>
           </div>
+          
+          {/* Bulk Actions Bar */}
+          {results.length > 0 && (
+            <div className="mt-4 p-4 rounded-lg border" style={{ backgroundColor: 'rgb(245, 240, 230)', borderColor: 'rgb(210, 180, 140)' }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={selectAllFiles}
+                    className="flex items-center gap-2 px-3 py-2 text-sm border rounded-md transition-colors"
+                    style={{ 
+                      backgroundColor: 'rgb(250, 248, 240)', 
+                      borderColor: 'rgb(210, 180, 140)',
+                      color: 'rgb(101, 67, 33)'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgb(245, 240, 230)'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgb(250, 248, 240)'}
+                  >
+                    <div className="w-4 h-4 rounded border-2 flex items-center justify-center" style={{
+                      backgroundColor: selectedFiles.size === results.length ? 'rgb(101, 67, 33)' : 'transparent',
+                      borderColor: selectedFiles.size === results.length ? 'rgb(101, 67, 33)' : 'rgb(139, 115, 85)'
+                    }}>
+                      {selectedFiles.size === results.length && (
+                        <Check className="w-3 h-3 text-white" />
+                      )}
+                    </div>
+                    {selectedFiles.size === results.length ? 'Deselect All' : 'Select All'}
+                  </button>
+                  
+                  {selectedFiles.size > 0 && (
+                    <span className="text-sm" style={{ color: 'rgb(139, 115, 85)' }}>
+                      {selectedFiles.size} file{selectedFiles.size !== 1 ? 's' : ''} selected
+                    </span>
+                  )}
+                </div>
+                
+                {selectedFiles.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        fetchExistingFolders();
+                        setShowFolderModal(true);
+                      }}
+                      disabled={bulkOperationLoading}
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-black rounded-lg shadow-sm disabled:opacity-50 transition-all duration-200 font-medium"
+                      style={{ backgroundColor: 'rgb(101, 67, 33)' }}
+                      onMouseEnter={(e) => {
+                        if (!bulkOperationLoading) {
+                          e.currentTarget.style.backgroundColor = 'rgb(92, 57, 25)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(101, 67, 33, 0.3)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!bulkOperationLoading) {
+                          e.currentTarget.style.backgroundColor = 'rgb(101, 67, 33)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
+                        }
+                      }}
+                    >
+                      <Move className="w-4 h-4" />
+                      Move to Folder
+                    </button>
+                    
+                    <button
+                      onClick={() => setShowNewFolderModal(true)}
+                      disabled={bulkOperationLoading}
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-black rounded-lg shadow-sm disabled:opacity-50 transition-all duration-200 font-medium"
+                      style={{ backgroundColor: 'rgb(101, 67, 33)' }}
+                      onMouseEnter={(e) => {
+                        if (!bulkOperationLoading) {
+                          e.currentTarget.style.backgroundColor = 'rgb(92, 57, 25)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(101, 67, 33, 0.3)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!bulkOperationLoading) {
+                          e.currentTarget.style.backgroundColor = 'rgb(101, 67, 33)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
+                        }
+                      }}
+                    >
+                      <FolderPlus className="w-4 h-4" />
+                      New Folder
+                    </button>
+                    
+                    <button
+                      onClick={handleBulkDelete}
+                      disabled={bulkOperationLoading}
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-black rounded-lg shadow-sm disabled:opacity-50 transition-all duration-200 font-medium"
+                      style={{ backgroundColor: 'rgb(101, 67, 33)' }}
+                      onMouseEnter={(e) => {
+                        if (!bulkOperationLoading) {
+                          e.currentTarget.style.backgroundColor = 'rgb(92, 57, 25)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(101, 67, 33, 0.3)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!bulkOperationLoading) {
+                          e.currentTarget.style.backgroundColor = 'rgb(101, 67, 33)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                          e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
+                        }
+                      }}
+                    >
+                      {bulkOperationLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                      Delete All
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Search Results Container */}
       {hasSearched && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="rounded-2xl shadow-sm border overflow-hidden" style={{ backgroundColor: 'rgb(250, 248, 240)', borderColor: 'rgb(210, 180, 140)' }}>
           {isSearching ? (
             <div className="flex items-center justify-center py-16">
               <div className="text-center">
-                <Loader2 className="w-12 h-12 animate-spin text-gray-500 mx-auto mb-4" />
-                <p className="text-gray-600">Searching through your files...</p>
+                <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4" style={{ color: 'rgb(139, 115, 85)' }} />
+                <p style={{ color: 'rgb(139, 115, 85)' }}>Searching through your files...</p>
               </div>
             </div>
           ) : results.length > 0 ? (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y" style={{ borderColor: 'rgb(210, 180, 140)' }}>
               {results.map((result, index) => (
                 <div
                   key={`${result.id}-${index}`}
-                  className="p-6 hover:bg-gray-50 transition-colors duration-200"
+                  className="p-6 transition-colors duration-200"
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgb(245, 240, 230)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
                   <div className="flex items-start gap-4">
                     <div className="flex-shrink-0 mt-1">
-                      <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-gray-600">
+                      <button
+                        onClick={() => toggleFileSelection(result.id)}
+                        className="mr-2 transition-all duration-200"
+                      >
+                        <div className="w-4 h-4 rounded border-2 flex items-center justify-center" style={{
+                          backgroundColor: selectedFiles.has(result.id) ? 'rgb(101, 67, 33)' : 'transparent',
+                          borderColor: selectedFiles.has(result.id) ? 'rgb(101, 67, 33)' : 'rgb(139, 115, 85)'
+                        }}>
+                          {selectedFiles.has(result.id) && (
+                            <Check className="w-3 h-3 text-white" />
+                          )}
+                        </div>
+                      </button>
+                    </div>
+                    <div className="flex-shrink-0 mt-1">
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'rgb(245, 240, 230)', color: 'rgb(139, 115, 85)' }}>
                         {getFileIcon(result.mimeType)}
                       </div>
                     </div>
                    
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 mb-2">
-                          <h3 className="text-lg font-semibold text-gray-900 truncate">
+                          <h3 className="text-lg font-semibold truncate" style={{ color: 'rgb(101, 67, 33)' }}>
                             {result.name}
                           </h3>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: 'rgb(245, 240, 230)', color: 'rgb(139, 115, 85)' }}>
                             {result.mimeType?.split('/').pop()?.toUpperCase() || 'FILE'}
                           </span>
                         </div>
                      
-                      <p className="text-gray-600 mb-3 line-clamp-2 leading-relaxed">
+                      <p className="mb-3 line-clamp-2 leading-relaxed" style={{ color: 'rgb(139, 115, 85)' }}>
                         {result.context}
                       </p>
                      
-                      <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                      <div className="flex flex-wrap items-center gap-4 text-sm" style={{ color: 'rgb(139, 115, 85)' }}>
                         <div className="flex items-center gap-1">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -510,11 +830,11 @@ const SearchFiles: React.FC = () => {
             </div>
           ) : (
             <div className="text-center py-16">
-              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gray-100 text-gray-400 mb-4">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-4" style={{ backgroundColor: 'rgb(245, 240, 230)', color: 'rgb(139, 115, 85)' }}>
                 <Search className="w-10 h-10" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
-              <p className="text-gray-500 max-w-md mx-auto">
+              <h3 className="text-lg font-medium mb-2" style={{ color: 'rgb(101, 67, 33)' }}>No results found</h3>
+              <p className="max-w-md mx-auto" style={{ color: 'rgb(139, 115, 85)' }}>
                 We couldn't find any files matching "{query}". Try different keywords or check your spelling.
               </p>
             </div>
@@ -525,11 +845,11 @@ const SearchFiles: React.FC = () => {
       {/* Empty State - Before Search */}
       {!hasSearched && !isSearching && (
         <div className="text-center py-16">
-          <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 text-gray-600 mb-6">
+          <div className="inline-flex items-center justify-center w-24 h-24 rounded-full mb-6" style={{ backgroundColor: 'rgb(245, 240, 230)', color: 'rgb(139, 115, 85)' }}>
             <Search className="w-12 h-12" />
           </div>
-          <h3 className="text-2xl font-medium text-gray-900 mb-2">Search your files</h3>
-          <p className="text-gray-500 max-w-lg mx-auto mb-8">
+          <h3 className="text-2xl font-medium mb-2" style={{ color: 'rgb(101, 67, 33)' }}>Search your files</h3>
+          <p className="max-w-lg mx-auto mb-8" style={{ color: 'rgb(139, 115, 85)' }}>
             Use natural language to find documents, images, and files across your Google Drive.
           </p>
          
@@ -539,16 +859,156 @@ const SearchFiles: React.FC = () => {
               { icon: <Sparkles className="w-5 h-5" />, text: 'AI-powered semantic understanding' },
               { icon: <Search className="w-5 h-5" />, text: 'Natural language search queries' },
             ].map((item, index) => (
-              <div key={index} className="flex items-center gap-3 p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600">
+              <div key={index} className="flex items-center gap-3 p-4 rounded-xl border shadow-sm transition-shadow" style={{ backgroundColor: 'rgb(250, 248, 240)', borderColor: 'rgb(210, 180, 140)' }} onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)'} onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.1)'}>
+                <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgb(245, 240, 230)', color: 'rgb(139, 115, 85)' }}>
                   {item.icon}
                 </div>
-                <span className="text-sm text-gray-700 font-medium">{item.text}</span>
+                <span className="text-sm font-medium" style={{ color: 'rgb(101, 67, 33)' }}>{item.text}</span>
               </div>
             ))}
           </div>
         </div>
       )}
+      
+      {/* Existing Folder Modal */}
+      {showFolderModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="rounded-lg p-6 w-full max-w-md mx-4" style={{ backgroundColor: 'rgb(250, 248, 240)' }}>
+            <h3 className="text-lg font-semibold mb-4" style={{ color: 'rgb(101, 67, 33)' }}>Move to Existing Folder</h3>
+            <p className="text-sm mb-4" style={{ color: 'rgb(139, 115, 85)' }}>
+              Select a folder to move {selectedFiles.size} selected file{selectedFiles.size !== 1 ? 's' : ''} to:
+            </p>
+            
+            <div className="max-h-64 overflow-y-auto border rounded-md" style={{ borderColor: 'rgb(210, 180, 140)' }}>
+              {existingFolders.length > 0 ? (
+                existingFolders.map((folder) => (
+                  <button
+                    key={folder.id}
+                    onClick={() => handleMoveToExistingFolder(folder.id, folder.name)}
+                    disabled={bulkOperationLoading}
+                    className="w-full text-left px-4 py-3 border-b last:border-b-0 disabled:opacity-50 transition-colors"
+                    style={{ borderColor: 'rgb(210, 180, 140)', color: 'rgb(101, 67, 33)' }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgb(245, 240, 230)'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    <div className="flex items-center gap-3">
+                      <FolderPlus className="w-5 h-5" style={{ color: 'rgb(139, 115, 85)' }} />
+                      <span className="font-medium">{folder.name}</span>
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="p-4 text-center" style={{ color: 'rgb(139, 115, 85)' }}>
+                  No folders found. Create a new folder instead.
+                </div>
+              )}
+            </div>
+            
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowFolderModal(false)}
+                disabled={bulkOperationLoading}
+                className="px-4 py-2 text-white rounded-lg shadow-sm disabled:opacity-50 transition-all duration-200 font-medium"
+                style={{ backgroundColor: 'rgb(101, 67, 33)' }}
+                onMouseEnter={(e) => {
+                  if (!bulkOperationLoading) {
+                    e.currentTarget.style.backgroundColor = 'rgb(92, 57, 25)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!bulkOperationLoading) {
+                    e.currentTarget.style.backgroundColor = 'rgb(101, 67, 33)';
+                  }
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* New Folder Modal */}
+      {showNewFolderModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="rounded-lg p-6 w-full max-w-md mx-4" style={{ backgroundColor: 'rgb(250, 248, 240)' }}>
+            <h3 className="text-lg font-semibold mb-4" style={{ color: 'rgb(101, 67, 33)' }}>Create New Folder</h3>
+            <p className="text-sm mb-4" style={{ color: 'rgb(139, 115, 85)' }}>
+              Enter a name for the new folder to move {selectedFiles.size} selected file{selectedFiles.size !== 1 ? 's' : ''} to:
+            </p>
+            
+            <input
+              type="text"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="Enter folder name"
+              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:border-transparent"
+              style={{ 
+                borderColor: 'rgb(210, 180, 140)', 
+                backgroundColor: 'rgb(255, 253, 248)',
+                color: 'rgb(101, 67, 33)'
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = 'rgb(139, 115, 85)';
+                e.currentTarget.style.boxShadow = '0 0 0 2px rgba(139, 115, 85, 0.2)';
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = 'rgb(210, 180, 140)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+              disabled={bulkOperationLoading}
+            />
+            
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowNewFolderModal(false);
+                  setNewFolderName('');
+                }}
+                disabled={bulkOperationLoading}
+                className="px-4 py-2 text-white rounded-lg shadow-sm disabled:opacity-50 transition-all duration-200 font-medium"
+                style={{ backgroundColor: 'rgb(120, 113, 108)' }}
+                onMouseEnter={(e) => {
+                  if (!bulkOperationLoading) {
+                    e.currentTarget.style.backgroundColor = 'rgb(107, 100, 95)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!bulkOperationLoading) {
+                    e.currentTarget.style.backgroundColor = 'rgb(120, 113, 108)';
+                  }
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateNewFolder}
+                disabled={bulkOperationLoading || !newFolderName.trim()}
+                className="px-4 py-2 text-white rounded-lg shadow-sm disabled:opacity-50 transition-all duration-200 font-medium flex items-center gap-2"
+                style={{ backgroundColor: 'rgb(101, 67, 33)' }}
+                onMouseEnter={(e) => {
+                  if (!bulkOperationLoading && newFolderName.trim()) {
+                    e.currentTarget.style.backgroundColor = 'rgb(92, 57, 25)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!bulkOperationLoading && newFolderName.trim()) {
+                    e.currentTarget.style.backgroundColor = 'rgb(101, 67, 33)';
+                  }
+                }}
+              >
+                {bulkOperationLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FolderPlus className="w-4 h-4" />
+                )}
+                Create & Move
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
     </div>
   );
 };

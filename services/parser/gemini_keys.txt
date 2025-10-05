@@ -1,1 +1,1 @@
-paste the gemini api keys
+Add your gemini 2.5-flash API keys

@@ -1451,7 +1451,7 @@ export default function App() {
                         <div className={`category-status ${cat.folder_id ? 'available' : 'missing'}`}>
                           {cat.folder_id ? (
                             <span>
-                              Drive folder available Ã‚Â· <a className="category-drive-link" href={`https://drive.google.com/drive/folders/${cat.folder_id}`} target="_blank" rel="noreferrer">Open in Drive</a>
+                              Drive folder available· <a className="category-drive-link" href={`https://drive.google.com/drive/folders/${cat.folder_id}`} target="_blank" rel="noreferrer">Open in Drive</a>
                             </span>
                           ) : (cat.missing_folder ? 'Folder missing in Drive' : `Files categorized as ${cat.name}`)}
                         </div>
@@ -1613,7 +1613,7 @@ export default function App() {
                                         <div className="mt-3 pt-3 border-t border-gray-100">
                                           <div className="text-xs text-gray-500 leading-relaxed">
                                             <span className="font-medium text-gray-600">Ask me to create:</span>
-                                            <span className="text-gray-500"> Flowcharts • Notes • Timelines • Insights • Summaries • Q&A</span>
+                                            <span className="text-gray-500"> Ask “create flowchart as image” | “create notes as pdf” | “create flashcards as docx” | “create timeline as pdf”</span>
                                             <br />
                                             <span className="text-gray-400">Available formats: PDF, Word, Text, Images</span>
                                           </div>
