@@ -37,7 +37,7 @@ Built with a **privacy-first architecture**, all processing can run **locally on
 
 ```bash
 git clone https://github.com/Nayuraikar/hackucchino_RVCE_4_NayanaJagadishRaikar
-cd Clarifile
+cd hackucchino_RVCE_4_NayanaJagadishRaikar
 ````
 
 ---
