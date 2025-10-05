@@ -23,6 +23,7 @@ from services.categorizer_fallback import categorize_with_fallback
 from semantic_search import hybrid_search, semantic_search, clean_query
 from google.oauth2.credentials import Credentials
 from services.assistant_generator import generate, export_bytes
+from googleapiclient.discovery import build
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 DB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "metadata_db", "clarifile.db")

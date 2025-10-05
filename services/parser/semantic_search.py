@@ -549,7 +549,7 @@ def semantic_search(
     if not documents or not query:
         return []
         
-    from search_utils import parse_search_query, filter_by_file_type, filter_negations
+    from search_utils_combined import parse_search_query, filter_by_file_type, filter_negations
     
     # Get query text and generate embeddings
     if isinstance(query, str):
@@ -622,7 +622,7 @@ def semantic_search(
     
     # Apply file type filtering if requested and file types are specified
     if apply_filters and file_types and hasattr(query_intent, 'file_types'):
-        from search_utils import filter_by_file_type
+        from search_utils_combined import filter_by_file_type
         documents = filter_by_file_type(documents, file_types)
         if not documents:
             logger.info(f"No documents match the specified file types: {file_types}")
@@ -630,7 +630,7 @@ def semantic_search(
     
     # Apply negation filtering at the document level if requested
     if apply_filters and negation_terms:
-        from search_utils import filter_negations
+        from search_utils_combined import filter_negations
         documents = filter_negations(documents, negation_terms)
     
     if not query_text:

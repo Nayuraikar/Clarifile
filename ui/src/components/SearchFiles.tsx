@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, FileText, Image as ImageIcon, Music, Film, FileSpreadsheet, Presentation as FilePresentation, Code, Archive, Mail, BookOpen, Loader2, Sparkles, Eye, MessageCircle, Download, ExternalLink } from 'lucide-react';
+import { Search, X, FileText, Image as ImageIcon, Music, Film, FileSpreadsheet, Presentation as FilePresentation, Code, Archive, Mail, BookOpen, Loader2, Sparkles, Eye, MessageCircle, ExternalLink } from 'lucide-react';
 
 interface SearchResult {
   id: string;
@@ -34,9 +34,6 @@ const SearchFiles: React.FC = () => {
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [isFocused, setIsFocused] = useState(false);
-  const [isVisualSearch, setIsVisualSearch] = useState(false);
-  const [visualSearchPreview, setVisualSearchPreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // File type options with icons
   const fileTypes = [
@@ -75,40 +72,6 @@ const SearchFiles: React.FC = () => {
     });
   };
 
-  const handleDownload = async (fileId: string, fileName: string) => {
-    try {
-      const authToken = localStorage.getItem('drive_token') || '';
-      if (!authToken) {
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlToken = urlParams.get('auth_token');
-        if (urlToken) {
-          localStorage.setItem('drive_token', urlToken);
-        }
-      }
-      
-      const token = localStorage.getItem('drive_token') || '';
-      const response = await fetch(`http://localhost:4000/download/${fileId}?auth_token=${encodeURIComponent(token)}`, {
-        method: 'GET',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to download file: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
-    } catch (error) {
-      console.error('Download error:', error);
-      alert('Failed to download file. Please try again.');
-    }
-  };
 
   // Get file icon based on mime type
   const getFileIcon = (mimeType: string) => {
@@ -142,7 +105,7 @@ const SearchFiles: React.FC = () => {
   // Handle search
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!query.trim() && !isVisualSearch) return;
+    if (!query.trim()) return;
    
     setIsSearching(true);
     setShowSuggestions(false);
@@ -151,18 +114,7 @@ const SearchFiles: React.FC = () => {
     try {
       let response: Response;
      
-      if (isVisualSearch && visualSearchPreview) {
-        // Handle visual search
-        const formData = new FormData();
-        const blob = await fetch(visualSearchPreview).then(r => r.blob());
-        formData.append('image', blob, 'search-image.jpg');
-       
-        response = await fetch('http://localhost:4000/visual_search', {
-          method: 'POST',
-          body: formData,
-        });
-      } else {
-        // Handle text search - Use the search_files endpoint from your backend
+      // Handle text search - Use the search_files endpoint from your backend
         // Try to get auth token from localStorage or URL params
         let authToken = localStorage.getItem('drive_token') || '';
         
@@ -187,7 +139,6 @@ const SearchFiles: React.FC = () => {
             limit: 50,
           }),
         });
-      }
      
       if (!response.ok) {
         throw new Error(`Search failed: ${response.statusText}`);
@@ -302,8 +253,6 @@ const SearchFiles: React.FC = () => {
     setQuery('');
     setResults([]);
     setSearchStats(null);
-    setVisualSearchPreview(null);
-    setIsVisualSearch(false);
     setShowSuggestions(false);
     setHasSearched(false);
     if (inputRef.current) {
@@ -311,28 +260,6 @@ const SearchFiles: React.FC = () => {
     }
   };
 
-  // Handle file upload for visual search
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-   
-    // Check if file is an image
-    if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file');
-      return;
-    }
-   
-    // Create preview URL
-    const previewUrl = URL.createObjectURL(file);
-    setVisualSearchPreview(previewUrl);
-    setIsVisualSearch(true);
-    setQuery('Searching similar images...');
-   
-    // Trigger search
-    setTimeout(() => {
-      handleSearch();
-    }, 100);
-  };
 
   // Handle click outside to close suggestions
   useEffect(() => {
@@ -369,9 +296,7 @@ const SearchFiles: React.FC = () => {
           }`}
         >
           <div className="absolute left-4 text-gray-400">
-            {isVisualSearch ? (
-              <ImageIcon className="w-5 h-5" />
-            ) : isSearching ? (
+            {isSearching ? (
               <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
             ) : (
               <Search className="w-5 h-5" />
@@ -385,24 +310,12 @@ const SearchFiles: React.FC = () => {
             onChange={handleInputChange}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder={isVisualSearch ? "Searching similar images..." : "Search documents, PDFs, presentations, and more..."}
-            className={`w-full pl-12 pr-32 py-4 text-lg text-gray-800 bg-transparent border-none focus:ring-0 focus:outline-none placeholder-gray-400 ${
-              isVisualSearch ? 'opacity-70' : ''
-            }`}
-            disabled={isSearching || isVisualSearch}
+            placeholder="Search documents, PDFs, presentations, and more..."
+            className="w-full pl-12 pr-16 py-4 text-lg text-gray-800 bg-transparent border-none focus:ring-0 focus:outline-none placeholder-gray-400"
+            disabled={isSearching}
           />
          
-          {visualSearchPreview && (
-            <div className="absolute right-20 w-8 h-8 rounded-full overflow-hidden border-2 border-white shadow-md">
-              <img
-                src={visualSearchPreview}
-                alt="Search preview"
-                className="w-full h-full object-cover"
-              />
-            </div>
-          )}
-         
-          {(query || visualSearchPreview) && !isSearching && (
+          {query && !isSearching && (
             <button
               type="button"
               onClick={clearSearch}
@@ -413,45 +326,23 @@ const SearchFiles: React.FC = () => {
             </button>
           )}
          
-          <div className="absolute right-2 flex space-x-1">
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="hidden"
-              id="visual-search-input"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className={`p-2 rounded-full transition-all ${
-                isVisualSearch
-                  ? 'text-white'
-                  : 'text-gray-500 hover:bg-gray-100'
-              }`}
-              style={isVisualSearch ? { backgroundColor: 'rgb(139, 115, 85)' } : {}}
-              title="Visual search"
-            >
-              <ImageIcon className="w-5 h-5" />
-            </button>
-           
+          <div className="absolute right-2">
             <button
               type="submit"
-              disabled={isSearching || (!query && !visualSearchPreview)}
+              disabled={isSearching || !query}
               className={`p-2 rounded-full transition-all ${
-                isSearching || (!query && !visualSearchPreview)
+                isSearching || !query
                   ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                   : 'text-white shadow-md'
               }`}
-              style={!(isSearching || (!query && !visualSearchPreview)) ? { backgroundColor: 'rgb(139, 115, 85)' } : {}}
+              style={!(isSearching || !query) ? { backgroundColor: 'rgb(139, 115, 85)' } : {}}
               onMouseEnter={(e) => {
-                if (!(isSearching || (!query && !visualSearchPreview))) {
+                if (!(isSearching || !query)) {
                   e.currentTarget.style.backgroundColor = 'rgb(120, 100, 75)';
                 }
               }}
               onMouseLeave={(e) => {
-                if (!(isSearching || (!query && !visualSearchPreview))) {
+                if (!(isSearching || !query)) {
                   e.currentTarget.style.backgroundColor = 'rgb(139, 115, 85)';
                 }
               }}
@@ -595,21 +486,7 @@ const SearchFiles: React.FC = () => {
                       </div>
                     </div>
                     
-                    <div className="flex-shrink-0 flex gap-2">
-                      <button
-                        onClick={() => handleDownload(result.id, result.name)}
-                        className="inline-flex items-center justify-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
-                        style={{ backgroundColor: 'rgb(100, 116, 139)' }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgb(80, 96, 119)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgb(100, 116, 139)';
-                        }}
-                      >
-                        <Download className="w-4 h-4 mr-1.5" />
-                        Download
-                      </button>
+                    <div className="flex-shrink-0">
                       <a
                         href={result.drive_url}
                         target="_blank"
@@ -659,7 +536,6 @@ const SearchFiles: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
             {[
               { icon: <FileText className="w-5 h-5" />, text: 'Search by content, not just filenames' },
-              { icon: <ImageIcon className="w-5 h-5" />, text: 'Find similar images with visual search' },
               { icon: <Sparkles className="w-5 h-5" />, text: 'AI-powered semantic understanding' },
               { icon: <Search className="w-5 h-5" />, text: 'Natural language search queries' },
             ].map((item, index) => (
